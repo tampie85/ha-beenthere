@@ -1,10 +1,8 @@
 /* BeenThere - Lovelace custom card, v0.1.0 */
 const MAP_SOURCES = Object.freeze({
   countries: 'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_0_map_units.geojson',
-  states: 'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_admin_1_states_provinces.geojson',
 });
-const UK_COUNTRIES = Object.freeze({ENG:'England',SCT:'Scotland',WLS:'Wales',NIR:'Northern Ireland'});
-const TERRITORY_CODES = Object.freeze({PAZ:'PT-20',PMD:'PT-30',NJM:'SJ'});
+const TERRITORY_CODES = Object.freeze({NJM:'SJ'});
 const COUNTRY_NAME_OVERRIDES = Object.freeze({AU:'Australia'});
 const EUROPE_VIEW_WEST = -25;
 const EUROPE_VIEW_EAST = 40;
@@ -46,11 +44,8 @@ class VisitedCountriesCard extends HTMLElement {
       this.data = await this._hass.callWS({type:'beenthere/get'});
       this.render();
       if (!this.geo) {
-        const [world,states]=await Promise.all([
-          this.fetchGeoJson(MAP_SOURCES.countries,'country'),
-          this.fetchGeoJson(MAP_SOURCES.states,'state'),
-        ]);
-        this.geo = this.prepareMap(world,states);
+        const world=await this.fetchGeoJson(MAP_SOURCES.countries,'country');
+        this.geo = this.prepareMap(world);
         this.render();
       }
     } catch(e) {
@@ -100,19 +95,14 @@ class VisitedCountriesCard extends HTMLElement {
     }
     return codes;
   }
-  prepareMap(units,states={features:[]}) {
-    let features=units.features.map(feature=>{
+  prepareMap(units) {
+    const features=units.features.map(feature=>{
       const properties=feature.properties||{};
       const unit=properties.GU_A3;
-      const nation=properties.ADM0_A3==='GBR'&&Object.hasOwn(UK_COUNTRIES,unit);
-      const code=nation?`GB-${unit}`:TERRITORY_CODES[unit]||properties.ISO_A2_EH;
+      const code=TERRITORY_CODES[unit]||properties.ISO_A2_EH;
       const continent=properties.CONTINENT==='Seven seas (open ocean)'?properties.REGION_UN:properties.CONTINENT;
       return {...feature,properties:{...properties,ISO_A2_EH:code,CONTINENT:continent}};
     });
-    const usStates=states.features.filter(feature=>feature.properties?.admin==='United States of America'&&/^US-[A-Z]{2}$/.test(feature.properties?.iso_3166_2)).map(feature=>({...feature,properties:{...feature.properties,ADMIN:feature.properties.name_en||feature.properties.name,ISO_A2_EH:feature.properties.iso_3166_2,CONTINENT:'North America'}}));
-    if(usStates.length!==51)throw new Error('US state map boundaries are incomplete.');
-    const worldFeatures=features.filter(feature=>this.iso(feature)!=='US');
-    features=[...worldFeatures,...usStates];
     const counts=new Map();
     for(const feature of features){const code=this.iso(feature);counts.set(code,(counts.get(code)||0)+1);}
     for(const feature of features){
@@ -120,19 +110,15 @@ class VisitedCountriesCard extends HTMLElement {
       const code=this.iso(feature);
       properties.ADMIN=code==='SJ'?'Svalbard and Jan Mayen':counts.get(code)===1?(properties.GEOUNIT||properties.ADMIN):properties.ADMIN;
     }
-    if(features.filter(feature=>this.iso(feature)?.startsWith('GB-')).length!==4)throw new Error('UK map boundaries are incomplete.');
     return {...units,features};
   }
   iso(feature) {
     const p=feature.properties||{};
     const value=p.ISO_A2_EH||p.ISO_A2||p.iso_a2||p.ISO_A2_UN||'';
-    return /^(?:[A-Z]{2}|GB-(?:ENG|SCT|WLS|NIR)|PT-(?:20|30)|US-[A-Z]{2})$/.test(value)?value:null;
+    return /^[A-Z]{2}$/.test(value)?value:null;
   }
   name(feature) {const p=feature.properties||{};return p.ADMIN||p.NAME||p.name||'Unknown';}
   flagCode(code) {
-    if (code.startsWith('GB-')) return 'gb';
-    if (code.startsWith('PT-')) return 'pt';
-    if (code.startsWith('US-')) return 'us';
     return code.toLowerCase();
   }
   countryNames(features) {

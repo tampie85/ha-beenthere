@@ -1,6 +1,6 @@
 {
   "config": {
-    "step": {"user": {"title": "Visited Countries", "description": "Set up the interactive travel map. Add travellers and groups directly in the dashboard card."}},
-    "abort": {"single_instance_allowed": "Visited Countries is already configured."}
+    "step": {"user": {"title": "BeenThere", "description": "Set up the interactive travel map. Add travellers and groups directly in the dashboard card."}},
+    "abort": {"single_instance_allowed": "BeenThere is already configured."}
   }
 }

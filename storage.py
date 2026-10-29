@@ -1,4 +1,4 @@
-"""Storage and domain operations for the Visited Countries integration."""
+"""Storage and domain operations for the BeenThere integration."""
 
 from __future__ import annotations
 

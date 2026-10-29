@@ -1,4 +1,4 @@
-/* Visited Countries - Lovelace custom card, v0.1.0 */
+/* BeenThere - Lovelace custom card, v0.1.0 */
 const MAP_SOURCES = Object.freeze({
   countries: 'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_0_map_units.geojson',
   states: 'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_admin_1_states_provinces.geojson',
@@ -36,7 +36,7 @@ class VisitedCountriesCard extends HTMLElement {
   }
   async loadData() {
     try {
-      this.data = await this._hass.callWS({type:'visited_countries/get'});
+      this.data = await this._hass.callWS({type:'beenthere/get'});
       this.render();
       if (!this.geo) {
         const [world,states]=await Promise.all([
@@ -56,7 +56,7 @@ class VisitedCountriesCard extends HTMLElement {
     return response.json();
   }
   setError(error) {
-    console.error('Visited Countries error:', error);
+    console.error('BeenThere error:', error);
     this.error = error instanceof Error ? error.message : String(error);
     this.render();
   }
@@ -65,7 +65,7 @@ class VisitedCountriesCard extends HTMLElement {
       
       const { id, ...rest } = args;
       this.data = await this._hass.callWS({
-        type: 'visited_countries/change',
+        type: 'beenthere/change',
         action,
         ...rest,
         ...(id !== undefined ? { target_id: id } : {})
@@ -189,7 +189,7 @@ class VisitedCountriesCard extends HTMLElement {
     const shapes=features.map((f,i)=>{const code=this.iso(f);const active=code&&visited.has(code);return `<path data-idx="${i}" class="country ${active?'active':''}" d="${this.countryPath(f)}"><title>${this.esc(this.name(f))}</title></path>`;}).join('');
     this.innerHTML=`<ha-card><style>
       .vc{background:radial-gradient(ellipse at 75% 0%,#193b57 0%,#0d182b 43%,#090f1c 100%);color:#e6f8ff;border-radius:18px;padding:20px;font-family:inherit;overflow:hidden}
-      .top{display:flex;gap:12px;justify-content:space-between;align-items:center;flex-wrap:wrap}.heading{display:flex;gap:8px;align-items:center;font-size:21px;font-weight:750;letter-spacing:.3px}.heading span{min-width:0;overflow-wrap:anywhere}.sub{font-size:12px;color:#8cb4c9;margin-top:3px}
+      .top{display:flex;gap:12px;justify-content:space-between;align-items:center;flex-wrap:wrap}.heading{display:flex;gap:8px;align-items:center;font-size:21px;font-weight:750;letter-spacing:.3px}.heading span{min-width:0;overflow-wrap:anywhere}.heading .brand-accent{color:#63f3e5}.sub{font-size:12px;color:#8cb4c9;margin-top:3px}
       select,input,button{border:1px solid #37536a;border-radius:10px;background:#14283a;color:#e8faff;padding:9px;font:inherit}button{cursor:pointer}button:hover{border-color:#45dce5}select{max-width:100%}
       .settings-toggle{display:inline-flex;align-items:center;justify-content:center;flex:0 0 36px;width:36px;height:36px;padding:0;background:transparent;border-color:transparent}.settings-toggle[aria-expanded="true"]{background:#203a51;border-color:#45dce5}.settings-toggle ha-icon{--mdc-icon-size:22px}
       .stats{display:flex;gap:12px;margin:14px 0}.stat{border:1px solid #234a61;background:#112b3f;border-radius:12px;padding:10px 16px}.stat strong{font-size:24px;color:#63f3e5}.stat small{display:block;color:#91afc4}
@@ -197,13 +197,13 @@ class VisitedCountriesCard extends HTMLElement {
       .muted{color:#9bb4c8;font-size:13px}.error{color:#ffb6ae;margin:10px 0}.details{margin-top:12px;padding:12px;border:1px solid #31516a;border-radius:12px;background:#11283c}.details strong{color:#7ff8e9}.hidden{display:none}
       .manager{margin-top:16px;border:1px solid #234a61;background:#112b3f;border-radius:8px;padding:16px}.manager-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:24px}.manager section{display:flex;flex-direction:column;gap:12px;min-width:0}.manager h3{margin:0;font-size:15px;font-weight:650;color:#b6e8f1;letter-spacing:0}.manager-help{margin:-6px 0 0;color:#9bb4c8;font-size:12px;line-height:1.45}.manager-list{display:flex;flex-direction:column;gap:6px;flex:1}.manager-list:empty::before{content:attr(data-empty);color:#9bb4c8;font-size:13px;padding:10px 0}.chip{display:grid;grid-template-columns:minmax(0,1fr) 36px 36px;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid #27445c;font-size:14px}.chip-name{overflow-wrap:anywhere;min-width:0}.chip-name small{display:block;color:#9bb4c8;font-size:12px;margin-top:3px}.manager button{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 10px;border-radius:6px;font-size:13px;letter-spacing:0}.manager button ha-icon{--mdc-icon-size:18px;flex-shrink:0}.chip button{width:36px;padding:0;background:transparent}.chip button:hover{background:#203a51}.chip button[data-delete]:hover,.chip button[data-delete-group]:hover{color:#ffb6ae;border-color:#ffb6ae}.manager .add-button{width:100%;background:#203a51}.manager button:focus-visible,.settings-toggle:focus-visible{outline:2px solid #63f3e5;outline-offset:2px}
       .manager h2{margin:0 0 16px;font-size:18px;font-weight:700;letter-spacing:0;overflow-wrap:anywhere}
-      .map-layout{display:grid;grid-template-columns:minmax(0,1fr) 180px;gap:16px;margin-top:14px;align-items:start}.region-panel{min-width:0;border-left:1px solid #31516a;padding-left:16px}.region-panel label{display:block;font-size:13px;color:#b6e8f1;margin-bottom:8px}.region-panel select{box-sizing:border-box;width:100%}.region-panel .stats{flex-direction:column}.region-panel .stat{border:0;border-radius:0;background:transparent;padding:8px 0}.map-layout .map{min-width:0}
+      .map-layout{display:grid;grid-template-columns:minmax(0,1fr) 270px;gap:16px;margin-top:14px;align-items:start}.region-panel{min-width:0;border-left:1px solid #31516a;padding-left:16px}.region-panel label{display:block;font-size:13px;color:#b6e8f1;margin-bottom:8px}.region-panel select{box-sizing:border-box;width:100%}.region-panel .stats{flex-direction:column}.region-panel .stat{border:0;border-radius:0;background:transparent;padding:8px 0}.map-layout .map{min-width:0}
       .region-panel select+label{margin-top:16px}
       .map-column{min-width:0}.search-row{display:grid;grid-template-columns:1fr 2fr;gap:12px;margin-bottom:12px;align-items:start;min-height:66px}.country-search{align-self:start;display:grid;grid-template-columns:minmax(0,1fr) auto;align-content:start;gap:8px;min-width:0}.country-search input{box-sizing:border-box;min-width:0;width:100%;height:38px;font-size:13px;border-radius:6px}.country-search button{align-self:start;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:38px;min-height:38px;border-radius:6px;font-size:13px}.country-search ha-icon{--mdc-icon-size:18px}.country-search-status{grid-column:1 / -1;margin:0;overflow-wrap:anywhere}.country-search-status:empty{display:none}.search-result{align-self:start;box-sizing:border-box;display:grid;grid-template-columns:32px minmax(0,1fr) auto;gap:10px;align-items:center;min-width:0;min-height:66px;padding:10px 12px;border:1px solid #31516a;border-radius:8px;background:#112b3f}.search-result img{display:block;width:32px;height:22px;object-fit:contain}.search-result-info{min-width:0}.search-result-name{display:block;font-size:14px;font-weight:650;overflow-wrap:anywhere}.search-result-status{display:block;margin-top:3px;color:#9bb4c8;font-size:12px}.search-result button{white-space:nowrap;font-size:12px;padding:7px 9px}.search-result-empty{display:flex;align-items:center;color:#9bb4c8;font-size:13px}
       .visited-country-list{list-style:none;margin:12px 0 0;padding:0;max-height:320px;max-height:min(320px,40dvh);overflow-y:auto;scrollbar-width:thin}.visited-country-list li{display:grid;grid-template-columns:24px minmax(0,1fr);gap:8px;align-items:center;min-height:36px;padding:6px 0;border-top:1px solid #27445c;font-size:13px;line-height:1.4}.visited-country-list img{display:block;width:24px;height:18px;object-fit:contain}.visited-country-list span{min-width:0;overflow-wrap:anywhere}.visited-country-empty{margin:10px 0 0}
       .region-summary{box-sizing:border-box;min-width:0;margin-top:16px;padding:12px;border:1px solid #31516a;border-radius:8px;background:#112b3f}.region-title{margin:0;font-size:15px;font-weight:650;line-height:1.4;letter-spacing:0;overflow-wrap:anywhere}.progress{margin:8px 0 0;color:#9bb4c8;font-size:13px;line-height:1.5;overflow-wrap:anywhere}.progress strong{color:#63f3e5;font-weight:650;font-variant-numeric:tabular-nums}.region-summary progress{display:block;width:100%;height:6px;margin-top:12px;border:0;border-radius:3px;overflow:hidden;appearance:none;background:#27445c;accent-color:#63f3e5}.region-summary progress::-webkit-progress-bar{background:#27445c}.region-summary progress::-webkit-progress-value{background:#63f3e5}.region-summary progress::-moz-progress-bar{background:#63f3e5}
       @media(max-width:520px){.map-layout{grid-template-columns:minmax(0,1fr) 130px;gap:10px}.region-panel{padding-left:10px}.region-panel select{padding:8px 4px;font-size:12px}.search-row{grid-template-columns:1fr}.country-search{width:100%}.map{height:45vh;height:45dvh}.vc{padding:12px}.region-summary{padding:10px}}
-    </style><div class="vc"><div class="top"><div><div class="heading"><span>✧ Visited Countries</span><button id="settings-toggle" class="settings-toggle" type="button" title="Settings" aria-label="Settings" aria-controls="vc-settings" aria-expanded="${!!this.settingsOpen}"><ha-icon icon="mdi:cog" aria-hidden="true"></ha-icon></button></div><div class="sub">Your world, one country at a time</div></div></div>
+    </style><div class="vc"><div class="top"><div><div class="heading"><span>Been<span class="brand-accent">There</span></span><button id="settings-toggle" class="settings-toggle" type="button" title="Settings" aria-label="Settings" aria-controls="vc-settings" aria-expanded="${!!this.settingsOpen}"><ha-icon icon="mdi:cog" aria-hidden="true"></ha-icon></button></div><div class="sub">Track the countries you've visited, individually or together.</div></div></div>
     <div id="vc-settings" class="manager${this.settingsOpen?'':' hidden'}" role="region" aria-labelledby="vc-settings-title"><h2 id="vc-settings-title">Settings</h2><div class="manager-grid"><section><h3>Travellers</h3><p class="manager-help">Individual people whose visited countries you can track.</p><div id="travellers" class="manager-list" data-empty="No travellers yet">${Object.entries(data.travellers).map(([id,p])=>`<div class="chip"><span class="chip-name">${this.esc(p.name)}</span><button data-rename="${id}" title="Rename traveller" aria-label="Rename ${this.esc(p.name)}"><ha-icon icon="mdi:pencil-outline" aria-hidden="true"></ha-icon></button><button data-delete="${id}" title="Delete traveller" aria-label="Delete ${this.esc(p.name)}"><ha-icon icon="mdi:trash-can-outline" aria-hidden="true"></ha-icon></button></div>`).join('')}</div><button id="add-traveller" class="add-button"><ha-icon icon="mdi:plus" aria-hidden="true"></ha-icon>Add traveller</button></section>
     <section><h3>Groups</h3><p class="manager-help">Combine travellers to compare the countries everyone in the group has visited.</p><div class="manager-list" data-empty="No groups yet">${Object.entries(data.groups).map(([id,g])=>`<div class="chip"><span class="chip-name">${this.esc(g.name)}<small>${g.members.length} ${g.members.length===1?'traveller':'travellers'}</small></span><button data-edit-group="${id}" title="Edit group" aria-label="Edit ${this.esc(g.name)}"><ha-icon icon="mdi:pencil-outline" aria-hidden="true"></ha-icon></button><button data-delete-group="${id}" title="Delete group" aria-label="Delete ${this.esc(g.name)}"><ha-icon icon="mdi:trash-can-outline" aria-hidden="true"></ha-icon></button></div>`).join('')}</div><button id="add-group" class="add-button"><ha-icon icon="mdi:plus" aria-hidden="true"></ha-icon>Add group</button></section></div></div>
     <div class="map-layout"><div class="map-column"><div class="search-row"><form id="country-search" class="country-search" aria-label="Find country"><input id="search" type="search" list="country-suggestions" placeholder="Country name" aria-label="Country name" required ${this.geo?'':'disabled'}/><datalist id="country-suggestions">${searchOptions}</datalist><button id="find" type="submit" ${this.geo?'':'disabled'}><ha-icon icon="mdi:magnify" aria-hidden="true"></ha-icon>Find</button><p id="country-search-status" class="muted country-search-status" role="status"></p></form>${resultFeature?`<div class="search-result" aria-live="polite"><img src="https://flagcdn.com/w40/${this.flagCode(this.iso(resultFeature))}.png" alt="" width="32" height="22"/><div class="search-result-info"><span class="search-result-name">${this.esc(this.name(resultFeature))}</span><span class="search-result-status">${visited.has(this.iso(resultFeature))?'Visited':'Not visited'}</span></div>${view.type==='traveller'?`<button id="toggle-search-result" type="button">${visited.has(this.iso(resultFeature))?'Remove':'Add'}</button>`:''}</div>`:'<div class="search-result search-result-empty" aria-live="polite">Search for a country to see its details.</div>'}</div><div class="map">${this.geo?`<svg viewBox="${bounds}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Interactive ${this.esc(this.continent)} map">${shapes}</svg>`:'<p class="muted" style="padding:20px">Loading map… Internet access is required to load country outlines.</p>'}</div></div>
@@ -263,10 +263,10 @@ class VisitedCountriesCard extends HTMLElement {
     this.change(id?'update_group':'add_group',{...(id?{id}:{}),name,members});
   }
 }
-if (!customElements.get('visited-countries-card')) {
-  customElements.define('visited-countries-card', VisitedCountriesCard);
+if (!customElements.get('beenthere-card')) {
+  customElements.define('beenthere-card', VisitedCountriesCard);
 }
 window.customCards=window.customCards||[];
-if (!window.customCards.some(card => card.type === 'visited-countries-card')) {
-  window.customCards.push({type:'visited-countries-card',name:'Visited Countries',description:'Interactive traveller and group world map'});
+if (!window.customCards.some(card => card.type === 'beenthere-card')) {
+  window.customCards.push({type:'beenthere-card',name:'BeenThere',description:'Interactive traveller and group world map'});
 }

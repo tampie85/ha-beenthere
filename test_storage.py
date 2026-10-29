@@ -1,11 +1,11 @@
-"""Focused tests for Visited Countries storage operations."""
+"""Focused tests for BeenThere storage operations."""
 
 import unittest
 import importlib.util
 from pathlib import Path
 
 _storage_path = Path(__file__).with_name("storage.py")
-_storage_spec = importlib.util.spec_from_file_location("visited_countries_storage", _storage_path)
+_storage_spec = importlib.util.spec_from_file_location("beenthere_storage", _storage_path)
 _storage = importlib.util.module_from_spec(_storage_spec)
 assert _storage_spec.loader is not None
 _storage_spec.loader.exec_module(_storage)

@@ -1,4 +1,4 @@
-"""Config flow for the Visited Countries integration."""
+"""Config flow for the BeenThere integration."""
 
 from __future__ import annotations
 
@@ -19,5 +19,5 @@ class VisitedCountriesConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if self._async_current_entries():
             return self.async_abort(reason="single_instance_allowed")
         if user_input is not None:
-            return self.async_create_entry(title="Visited Countries", data={})
+            return self.async_create_entry(title="BeenThere", data={})
         return self.async_show_form(step_id="user")

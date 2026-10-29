@@ -1,7 +1,8 @@
 """Frontend contracts; install quickjs-ng only in the development environment."""
 
-from pathlib import Path
 import unittest
+
+from helpers import COMPONENT_ROOT
 
 try:
     import quickjs
@@ -18,7 +19,7 @@ class FrontendTests(unittest.TestCase):
             globalThis.customElements={get:()=>false,define:()=>{}};
             globalThis.console={error:()=>{}};
         """)
-        source = Path(__file__).parent / "frontend" / "beenthere-card.js"
+        source = COMPONENT_ROOT / "frontend" / "beenthere-card.js"
         self.context.eval(source.read_text())
         self.context.eval("""
             const card=new VisitedCountriesCard();
@@ -78,7 +79,3 @@ class FrontendTests(unittest.TestCase):
         self.assertTrue(self.context.eval("visited.has('GF')"))
         self.assertFalse(self.context.eval("visited.has('FR')||visited.has('US')"))
         self.assertIsNone(self.context.eval("card.iso({properties:{ISO_A2_EH:'US-CA'}})"))
-
-
-if __name__ == "__main__":
-    unittest.main()

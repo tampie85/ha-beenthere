@@ -51,18 +51,46 @@ From the integration repository root, run the storage tests without Home
 Assistant or additional test dependencies:
 
 ```sh
-python3 -B test_storage.py
+python3 -B -m unittest discover -s tests -p 'test_storage.py'
+python3 -B -m unittest discover -s tests -p 'test_travellers_groups.py'
 ```
 
-For all contract tests, install `voluptuous` and the optional `quickjs-ng`
-JavaScript runtime in a separate development environment, then run:
+For all contract tests, create a separate development environment outside the
+integration directory. Do not install test dependencies into Home Assistant:
 
 ```sh
-python3 -B -m unittest discover -s . -p 'test_*.py'
+python3 -m venv /tmp/beenthere-test-venv
+. /tmp/beenthere-test-venv/bin/activate
+python3 -m pip install pytest coverage voluptuous quickjs-ng
+python3 -B -m unittest discover -s tests -p 'test_*.py' -v
+python3 -m pytest -q
+```
+
+The tests retain their `unittest` fixtures and assertions; pytest is an
+alternative runner and needs no async plugin. The flat `tests/` directory
+groups storage validation, traveller/group operations, persistence, integration
+lifecycle/WebSocket contracts and frontend behaviour. Shared loaders and the
+backend harness live in `tests/helpers.py`; frontend setup stays local.
+
+To measure Python line and branch coverage:
+
+```sh
+python3 -m coverage run --branch --source=. --omit='test_*.py,tests/*' -m unittest discover -s tests -p 'test_*.py'
+python3 -m coverage report -m
 ```
 
 Frontend tests are explicitly skipped when `quickjs-ng` is unavailable. Backend
 tests use lightweight Home Assistant boundary doubles; frontend tests execute
-JavaScript without a browser. These checks do not replace testing against real
-Home Assistant versions, HACS/hassfest validation, or browser accessibility and
-responsive-layout checks.
+JavaScript without a browser. Install `quickjs-ng` for a full run with no skips.
+Coverage.py measures Python, not JavaScript executed by QuickJS. These checks
+do not replace testing against real Home Assistant versions, HACS/hassfest
+validation, or browser accessibility and responsive-layout checks.
+
+## Release packaging
+
+The `.gitattributes` export exclusions keep `tests/` and `pytest.ini` out of
+Git archives. Once these changes are committed, a runtime ZIP can be created
+from a release tag with `git archive --format=zip --output=beenthere.zip <tag>`.
+No release workflow is configured yet. Future custom ZIP or HACS release
+workflows must preserve these exclusions; copying the working directory
+directly does not apply Git archive attributes.

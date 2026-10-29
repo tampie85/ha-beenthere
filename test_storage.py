@@ -27,6 +27,52 @@ class StorageValidationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             valid_country_code("US-INVALID")
 
+    def test_name_length_boundaries(self):
+        self.assertEqual(valid_name(" x "), "x")
+        self.assertEqual(valid_name("x" * 80), "x" * 80)
+        for value in ("", "  ", "x" * 81):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                valid_name(value)
+
+    def test_malformed_group_members_are_normalized(self):
+        for members in (None, 42, "one", {"one": True}):
+            with self.subTest(members=members):
+                data = normalize_data({
+                    "travellers": {"one": {"name": "One", "countries": []}},
+                    "groups": {"group": {"name": "Group", "members": members}},
+                })
+                self.assertEqual(data["groups"]["group"]["members"], [])
+                self.assertIn("one", data["travellers"])
+
+    def test_add_and_rename_traveller(self):
+        data = normalize_data({})
+        apply_change(data, "add_traveller", {"name": " Alice "})
+        ident = next(iter(data["travellers"]))
+        self.assertEqual(data["travellers"][ident], {"name": "Alice", "countries": []})
+        apply_change(data, "rename_traveller", {"target_id": ident, "name": "Bob"})
+        self.assertEqual(data["travellers"][ident]["name"], "Bob")
+
+    def test_update_and_delete_group(self):
+        data = normalize_data({"travellers": {"one": {"name": "One"}}})
+        apply_change(data, "add_group", {"name": "Old", "members": []})
+        ident = next(iter(data["groups"]))
+        apply_change(data, "update_group", {
+            "target_id": ident, "name": "New", "members": ["one", "one"],
+        })
+        self.assertEqual(data["groups"][ident], {"name": "New", "members": ["one"]})
+        apply_change(data, "delete_group", {"target_id": ident})
+        self.assertEqual(data["groups"], {})
+        self.assertIn("one", data["travellers"])
+
+    def test_territories_and_legacy_visits_remain_independent(self):
+        data = normalize_data({"travellers": {"one": {
+            "name": "One", "countries": ["GF", "US-CA", "GB-ENG", "PT-20"],
+        }}})
+        apply_change(data, "toggle_country", {"target_id": "one", "country": "FR"})
+        self.assertEqual(data["travellers"]["one"]["countries"], [
+            "FR", "GB-ENG", "GF", "PT-20", "US-CA",
+        ])
+
     def test_normalize_data_removes_invalid_records_and_members(self):
         data = normalize_data({
             "travellers": {

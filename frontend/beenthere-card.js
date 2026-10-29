@@ -20,17 +20,22 @@ class VisitedCountriesCard extends HTMLElement {
     this.render();
   }
   set hass(hass) {
+    const couldEdit=this.canEdit();
     this._hass = hass;
+    if(!this.canEdit())this.settingsOpen=false;
     if (!this._started && hass) {
       this._started = true;
       this.load().catch(error => this.setError(error));
     }
+    if(couldEdit!==this.canEdit())this.render();
   }
+  canEdit() { return this._hass?.user?.is_admin===true; }
   getCardSize() { return 8; }
   getGridOptions() {
     return {columns: 12, min_columns: 12, max_columns: 12, rows: 8};
   }
   toggleSettings() {
+    if(!this.canEdit())return;
     this.settingsOpen=!this.settingsOpen;
     this.render();
   }
@@ -59,10 +64,14 @@ class VisitedCountriesCard extends HTMLElement {
   }
   setError(error) {
     console.error('BeenThere error:', error);
-    this.error = error instanceof Error ? error.message : String(error);
+    this.error = typeof error?.message==='string' ? error.message : String(error);
     this.render();
   }
   async change(action, args={}) {
+    if(!this.canEdit()) {
+      this.setError(new Error('Administrator access is required to change BeenThere data.'));
+      return;
+    }
     try {
       
       const { id, ...rest } = args;
@@ -225,16 +234,21 @@ class VisitedCountriesCard extends HTMLElement {
     this.querySelector('#add-group').onclick=()=>this.editGroup();
     this.querySelectorAll('[data-edit-group]').forEach(el=>el.onclick=()=>this.editGroup(el.dataset.editGroup));
     this.querySelectorAll('[data-delete-group]').forEach(el=>el.onclick=()=>{const id=el.dataset.deleteGroup;if(confirm(`Delete group ${data.groups[id].name}? Travellers will be kept.`))this.change('delete_group',{id});});
+    this.querySelectorAll('.manager button').forEach(button=>{button.disabled=!this.canEdit();});
+    this.querySelector('#vc-settings').classList.toggle('hidden',!this.canEdit()||!this.settingsOpen);
+    const toggle=this.querySelector('#toggle-search-result');
+    if(toggle){toggle.hidden=!this.canEdit();toggle.disabled=!this.canEdit();}
   }
   showDetail(html) {const el=this.querySelector('#details');el.innerHTML=html;el.classList.remove('hidden');}
   clickCountry(feature) {
     const code=this.iso(feature),view=this.chosen();
-    if(!code) {this.showDetail(`${this.esc(name)} cannot be edited because its country code is unavailable.`);return;}
-    if(view.type==='traveller') {this.change('toggle_country',{id:view.id,country:code});return;}
+    if(!code) {this.showDetail(`${this.esc(this.name(feature))} cannot be edited because its country code is unavailable.`);return;}
+    if(view.type==='traveller'&&this.canEdit()) {this.change('toggle_country',{id:view.id,country:code});return;}
     this.searchResult=code;
     this.render();
   }
   editGroup(id) {
+    if(!this.canEdit())return;
     const old=id?this.data.groups[id]:null;
     const name=prompt('Group name',old?.name||'');if(!name?.trim())return;
     const entries=Object.entries(this.data.travellers);

@@ -74,8 +74,11 @@ def normalize_data(value: Any) -> dict[str, dict[str, Any]]:
                 name = valid_name(group.get("name", ""))
             except (TypeError, ValueError):
                 continue
+            raw_members = group.get("members", [])
+            if not isinstance(raw_members, list):
+                raw_members = []
             members = list(dict.fromkeys(
-                member for member in group.get("members", [])
+                member for member in raw_members
                 if isinstance(member, str) and member in travellers
             ))
             groups[ident] = {"name": name, "members": members}

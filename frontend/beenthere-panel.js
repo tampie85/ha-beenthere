@@ -8,14 +8,14 @@ class VisitedCountriesPanel extends HTMLElement {
       <style>
         :host{display:block;height:100%;overflow:auto;background:var(--primary-background-color);color:var(--primary-text-color)}
         header{display:flex;align-items:center;gap:8px;min-height:var(--header-height,56px);padding:0 16px 0 4px;box-sizing:border-box;background:var(--app-header-background-color);color:var(--app-header-text-color)}
-        h1{margin:0;font-size:20px;font-weight:400;letter-spacing:0;overflow-wrap:anywhere}
+        .title-block{min-width:0;display:flex;flex-direction:column;justify-content:center;line-height:1.15}.title-block h1{margin:0;font-size:20px;font-weight:700;letter-spacing:0;overflow-wrap:anywhere}.subtitle{margin-top:2px;color:#9bb4c8;font-size:11px;line-height:1.2;overflow-wrap:anywhere}.brand-accent{color:#63f3e5}
         .settings-toggle{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;margin-left:auto;padding:0;border:0;border-radius:50%;background:transparent;color:inherit;cursor:pointer}.settings-toggle:hover{background:var(--app-header-edit-background-color,rgba(255,255,255,.12))}.settings-toggle:focus-visible{outline:2px solid currentColor;outline-offset:2px}.settings-toggle ha-icon{--mdc-icon-size:22px}
         main{min-width:0}
         beenthere-card{display:block}
         beenthere-card ha-card{display:block;border:0;border-radius:0;box-shadow:none;background:transparent}
         beenthere-card .vc{border-radius:0;min-height:calc(100dvh - var(--header-height,56px));box-sizing:border-box}
       </style>
-      <header><ha-menu-button></ha-menu-button><h1>BeenThere</h1><button class="settings-toggle" type="button" title="Settings" aria-label="Settings" aria-expanded="false"><ha-icon icon="mdi:cog" aria-hidden="true"></ha-icon></button></header>
+      <header><ha-menu-button></ha-menu-button><div class="title-block"><h1>Been<span class="brand-accent">There</span></h1><div class="subtitle">Track the countries you've visited, individually or together.</div></div><button class="settings-toggle" type="button" title="Settings" aria-label="Settings" aria-expanded="false"><ha-icon icon="mdi:cog" aria-hidden="true"></ha-icon></button></header>
       <main></main>
     `;
     this._menu = this.shadowRoot.querySelector('ha-menu-button');

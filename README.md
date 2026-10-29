@@ -8,5 +8,5 @@ After updating the integration, restart Home Assistant to register the sidebar
 page. Its URL is `/beenthere`. Refresh the browser if the new sidebar
 entry does not appear immediately.
 
-The existing dashboard card remains available as `custom:beenthere-card`.
-You can remove it from your dashboard without deleting your visited-country data.
+BeenThere is available as a dedicated sidebar panel and does not register a
+dashboard card.

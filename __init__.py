@@ -15,7 +15,6 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
 from .const import CARD_URL, DOMAIN, PANEL_PATH, PANEL_URL, STORAGE_VERSION, UPDATED_EVENT
-from .frontend_resource import async_register_card_resource
 from .storage import apply_change, create_default_data, normalize_data
 
 
@@ -88,15 +87,10 @@ async def async_setup_entry(
         frontend_url_path=PANEL_PATH,
         sidebar_title="BeenThere",
         sidebar_icon="mdi:map-marker-check",
-        module_url=PANEL_URL,
+        module_url=f"{PANEL_URL}?v=2",
         embed_iframe=False,
         require_admin=False,
     )
-
-    # Automatically register the dashboard resource.
-    # The helper checks for existing registrations to
-    # avoid creating duplicates.
-    await async_register_card_resource(hass)
 
     # Return traveller and group data to the frontend.
     @websocket_api.websocket_command(GET_COMMAND)

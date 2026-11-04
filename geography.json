@@ -1,0 +1,127 @@
+{
+  "version": 1,
+  "non_iso_country_ids": ["XK"],
+  "countries": {
+    "Africa": {
+      "DZ": "Algeria", "AO": "Angola", "BJ": "Benin", "BW": "Botswana",
+      "BF": "Burkina Faso", "BI": "Burundi", "CV": "Cabo Verde", "CM": "Cameroon",
+      "CF": "Central African Republic", "TD": "Chad", "KM": "Comoros",
+      "CG": "Republic of the Congo", "CD": "Democratic Republic of the Congo",
+      "CI": "Cote d'Ivoire", "DJ": "Djibouti", "EG": "Egypt", "GQ": "Equatorial Guinea",
+      "ER": "Eritrea", "SZ": "Eswatini", "ET": "Ethiopia", "GA": "Gabon",
+      "GM": "Gambia", "GH": "Ghana", "GN": "Guinea", "GW": "Guinea-Bissau",
+      "KE": "Kenya", "LS": "Lesotho", "LR": "Liberia", "LY": "Libya",
+      "MG": "Madagascar", "MW": "Malawi", "ML": "Mali", "MR": "Mauritania",
+      "MU": "Mauritius", "YT": "Mayotte", "MA": "Morocco", "MZ": "Mozambique",
+      "NA": "Namibia", "NE": "Niger", "NG": "Nigeria", "RE": "Reunion",
+      "RW": "Rwanda", "SH": "Saint Helena, Ascension and Tristan da Cunha",
+      "ST": "Sao Tome and Principe", "SN": "Senegal", "SC": "Seychelles",
+      "SL": "Sierra Leone", "SO": "Somalia", "ZA": "South Africa", "SS": "South Sudan",
+      "SD": "Sudan", "TZ": "Tanzania", "TG": "Togo", "TN": "Tunisia",
+      "UG": "Uganda", "EH": "Western Sahara", "ZM": "Zambia", "ZW": "Zimbabwe",
+      "IO": "British Indian Ocean Territory"
+    },
+    "Antarctica": {
+      "AQ": "Antarctica", "BV": "Bouvet Island", "TF": "French Southern Territories",
+      "HM": "Heard Island and McDonald Islands", "GS": "South Georgia and the South Sandwich Islands"
+    },
+    "Asia": {
+      "AF": "Afghanistan", "AM": "Armenia", "AZ": "Azerbaijan", "BH": "Bahrain",
+      "BD": "Bangladesh", "BT": "Bhutan", "BN": "Brunei", "KH": "Cambodia",
+      "CN": "China", "CX": "Christmas Island", "CC": "Cocos (Keeling) Islands",
+      "CY": "Cyprus", "GE": "Georgia", "HK": "Hong Kong", "IN": "India",
+      "ID": "Indonesia", "IR": "Iran", "IQ": "Iraq", "IL": "Israel", "JP": "Japan",
+      "JO": "Jordan", "KZ": "Kazakhstan", "KW": "Kuwait", "KG": "Kyrgyzstan",
+      "LA": "Laos", "LB": "Lebanon", "MO": "Macao", "MY": "Malaysia",
+      "MV": "Maldives", "MN": "Mongolia", "MM": "Myanmar", "NP": "Nepal",
+      "KP": "North Korea", "OM": "Oman", "PK": "Pakistan", "PS": "Palestine",
+      "PH": "Philippines", "QA": "Qatar", "SA": "Saudi Arabia", "SG": "Singapore",
+      "KR": "South Korea", "LK": "Sri Lanka", "SY": "Syria", "TW": "Taiwan",
+      "TJ": "Tajikistan", "TH": "Thailand", "TL": "Timor-Leste", "TR": "Turkey",
+      "TM": "Turkmenistan", "AE": "United Arab Emirates", "UZ": "Uzbekistan",
+      "VN": "Vietnam", "YE": "Yemen"
+    },
+    "Europe": {
+      "AL": "Albania", "AD": "Andorra", "AT": "Austria", "BY": "Belarus",
+      "BE": "Belgium", "BA": "Bosnia and Herzegovina", "BG": "Bulgaria",
+      "HR": "Croatia", "CZ": "Czechia", "DK": "Denmark", "EE": "Estonia",
+      "FO": "Faroe Islands", "FI": "Finland", "FR": "France", "DE": "Germany",
+      "GI": "Gibraltar", "GR": "Greece", "GG": "Guernsey", "VA": "Vatican City",
+      "HU": "Hungary", "IS": "Iceland", "IE": "Ireland", "IM": "Isle of Man",
+      "IT": "Italy", "JE": "Jersey", "LV": "Latvia", "LI": "Liechtenstein",
+      "LT": "Lithuania", "LU": "Luxembourg", "MT": "Malta", "MD": "Moldova",
+      "MC": "Monaco", "ME": "Montenegro", "NL": "Netherlands", "MK": "North Macedonia",
+      "NO": "Norway", "PL": "Poland", "PT": "Portugal", "RO": "Romania",
+      "RU": "Russia", "SM": "San Marino", "RS": "Serbia", "SK": "Slovakia",
+      "SI": "Slovenia", "ES": "Spain", "SJ": "Svalbard and Jan Mayen",
+      "SE": "Sweden", "CH": "Switzerland", "UA": "Ukraine", "GB": "United Kingdom",
+      "AX": "Aland Islands", "XK": "Kosovo"
+    },
+    "North America": {
+      "AI": "Anguilla", "AG": "Antigua and Barbuda", "AW": "Aruba", "BS": "Bahamas",
+      "BB": "Barbados", "BZ": "Belize", "BM": "Bermuda", "BQ": "Bonaire, Sint Eustatius and Saba",
+      "CA": "Canada", "KY": "Cayman Islands", "CR": "Costa Rica", "CU": "Cuba",
+      "CW": "Curacao", "DM": "Dominica", "DO": "Dominican Republic", "SV": "El Salvador",
+      "GL": "Greenland", "GD": "Grenada", "GP": "Guadeloupe", "GT": "Guatemala",
+      "HT": "Haiti", "HN": "Honduras", "JM": "Jamaica", "MQ": "Martinique",
+      "MX": "Mexico", "MS": "Montserrat", "NI": "Nicaragua", "PA": "Panama",
+      "PR": "Puerto Rico", "BL": "Saint Barthelemy", "KN": "Saint Kitts and Nevis",
+      "LC": "Saint Lucia", "MF": "Saint Martin", "PM": "Saint Pierre and Miquelon",
+      "VC": "Saint Vincent and the Grenadines", "SX": "Sint Maarten", "TT": "Trinidad and Tobago",
+      "TC": "Turks and Caicos Islands", "US": "United States", "VG": "British Virgin Islands",
+      "VI": "US Virgin Islands"
+    },
+    "Oceania": {
+      "AS": "American Samoa", "AU": "Australia", "CK": "Cook Islands", "FJ": "Fiji",
+      "PF": "French Polynesia", "GU": "Guam", "KI": "Kiribati", "MH": "Marshall Islands",
+      "FM": "Micronesia", "NR": "Nauru", "NC": "New Caledonia", "NZ": "New Zealand",
+      "NU": "Niue", "NF": "Norfolk Island", "MP": "Northern Mariana Islands", "PW": "Palau",
+      "PG": "Papua New Guinea", "PN": "Pitcairn Islands", "WS": "Samoa", "SB": "Solomon Islands",
+      "TK": "Tokelau", "TO": "Tonga", "TV": "Tuvalu", "UM": "US Minor Outlying Islands",
+      "VU": "Vanuatu", "WF": "Wallis and Futuna"
+    },
+    "South America": {
+      "AR": "Argentina", "BO": "Bolivia", "BR": "Brazil", "CL": "Chile", "CO": "Colombia",
+      "EC": "Ecuador", "FK": "Falkland Islands", "GF": "French Guiana", "GY": "Guyana",
+      "PY": "Paraguay", "PE": "Peru", "SR": "Suriname", "UY": "Uruguay", "VE": "Venezuela"
+    }
+  },
+  "subdivision_countries": ["AU", "CA", "DE", "GB", "US"],
+  "subdivisions": {
+    "GB": {"GB-ENG": "England", "GB-NIR": "Northern Ireland", "GB-SCT": "Scotland", "GB-WLS": "Wales"},
+    "US": {
+      "US-AL": "Alabama", "US-AK": "Alaska", "US-AZ": "Arizona", "US-AR": "Arkansas",
+      "US-CA": "California", "US-CO": "Colorado", "US-CT": "Connecticut", "US-DE": "Delaware",
+      "US-DC": "Washington, DC", "US-FL": "Florida", "US-GA": "Georgia", "US-HI": "Hawaii",
+      "US-ID": "Idaho", "US-IL": "Illinois", "US-IN": "Indiana", "US-IA": "Iowa",
+      "US-KS": "Kansas", "US-KY": "Kentucky", "US-LA": "Louisiana", "US-ME": "Maine",
+      "US-MD": "Maryland", "US-MA": "Massachusetts", "US-MI": "Michigan", "US-MN": "Minnesota",
+      "US-MS": "Mississippi", "US-MO": "Missouri", "US-MT": "Montana", "US-NE": "Nebraska",
+      "US-NV": "Nevada", "US-NH": "New Hampshire", "US-NJ": "New Jersey", "US-NM": "New Mexico",
+      "US-NY": "New York", "US-NC": "North Carolina", "US-ND": "North Dakota", "US-OH": "Ohio",
+      "US-OK": "Oklahoma", "US-OR": "Oregon", "US-PA": "Pennsylvania", "US-RI": "Rhode Island",
+      "US-SC": "South Carolina", "US-SD": "South Dakota", "US-TN": "Tennessee", "US-TX": "Texas",
+      "US-UT": "Utah", "US-VT": "Vermont", "US-VA": "Virginia", "US-WA": "Washington",
+      "US-WV": "West Virginia", "US-WI": "Wisconsin", "US-WY": "Wyoming"
+    },
+    "AU": {
+      "AU-ACT": "Australian Capital Territory", "AU-NSW": "New South Wales", "AU-NT": "Northern Territory",
+      "AU-QLD": "Queensland", "AU-SA": "South Australia", "AU-TAS": "Tasmania",
+      "AU-VIC": "Victoria", "AU-WA": "Western Australia"
+    },
+    "CA": {
+      "CA-AB": "Alberta", "CA-BC": "British Columbia", "CA-MB": "Manitoba", "CA-NB": "New Brunswick",
+      "CA-NL": "Newfoundland and Labrador", "CA-NS": "Nova Scotia", "CA-NT": "Northwest Territories",
+      "CA-NU": "Nunavut", "CA-ON": "Ontario", "CA-PE": "Prince Edward Island", "CA-QC": "Quebec",
+      "CA-SK": "Saskatchewan", "CA-YT": "Yukon"
+    },
+    "DE": {
+      "DE-BW": "Baden-Wurttemberg", "DE-BY": "Bavaria", "DE-BE": "Berlin", "DE-BB": "Brandenburg",
+      "DE-HB": "Bremen", "DE-HH": "Hamburg", "DE-HE": "Hesse", "DE-MV": "Mecklenburg-Western Pomerania",
+      "DE-NI": "Lower Saxony", "DE-NW": "North Rhine-Westphalia", "DE-RP": "Rhineland-Palatinate",
+      "DE-SL": "Saarland", "DE-SN": "Saxony", "DE-ST": "Saxony-Anhalt", "DE-SH": "Schleswig-Holstein",
+      "DE-TH": "Thuringia"
+    },
+    "PT": {"PT-20": "Azores", "PT-30": "Madeira"}
+  }
+}

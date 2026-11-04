@@ -2,18 +2,43 @@
 
 from __future__ import annotations
 
-import re
+from copy import deepcopy
 import uuid
 from typing import Any
 
+from .geography import get_geography, persisted_location_id
 
 NAME_MAX_LENGTH = 80
-COUNTRY_CODE_PATTERN = re.compile(
-    r"^(?:[A-Z]{2}|GB-(?:ENG|NIR|SCT|WLS)|PT-(?:20|30)|US-[A-Z]{2})$"
-)
+ACTION_FIELDS = {
+    "add_traveller": {"name"},
+    "rename_traveller": {"target_id", "name"},
+    "delete_traveller": {"target_id"},
+    "toggle_country": {"target_id", "country"},
+    "set_visit": {"target_id", "location", "visited"},
+    "set_map_detail": {"country", "enabled"},
+    "add_group": {"name", "members"},
+    "update_group": {"target_id", "name", "members"},
+    "delete_group": {"target_id"},
+}
+
+
 def create_default_data() -> dict[str, dict[str, Any]]:
     """Return a fresh empty data structure."""
-    return {"travellers": {}, "groups": {}}
+    return {
+        "travellers": {}, "groups": {},
+        "map_settings": {"subdivision_countries": ["GB"]},
+    }
+
+
+def migrate_data(old_major_version: int, old_minor_version: int, value: Any) -> dict:
+    """Upgrade known storage versions without interpreting explicit visits."""
+    if old_major_version != 1 or old_minor_version != 1:
+        raise NotImplementedError("Unsupported BeenThere storage version")
+    if not isinstance(value, dict):
+        raise ValueError("Invalid BeenThere storage snapshot")
+    migrated = deepcopy(value)
+    migrated.setdefault("map_settings", {"subdivision_countries": ["GB"]})
+    return migrated
 
 
 def valid_name(value: Any) -> str:
@@ -28,12 +53,7 @@ def valid_name(value: Any) -> str:
 
 def valid_country_code(value: Any) -> str:
     """Validate and normalize a country or subdivision code."""
-    if not isinstance(value, str):
-        raise ValueError("Country code must be a string")
-    code = value.strip().upper()
-    if not COUNTRY_CODE_PATTERN.fullmatch(code):
-        raise ValueError("Expected a country code or supported subdivision code")
-    return code
+    return get_geography().valid_id(value)
 
 
 def normalize_data(value: Any) -> dict[str, dict[str, Any]]:
@@ -59,7 +79,7 @@ def normalize_data(value: Any) -> dict[str, dict[str, Any]]:
                 if not isinstance(code, str):
                     continue
                 try:
-                    countries.add(valid_country_code(code))
+                    countries.add(persisted_location_id(code))
                 except ValueError:
                     continue
             travellers[ident] = {"name": name, "countries": sorted(countries)}
@@ -83,7 +103,18 @@ def normalize_data(value: Any) -> dict[str, dict[str, Any]]:
             ))
             groups[ident] = {"name": name, "members": members}
 
-    return {"travellers": travellers, "groups": groups}
+    settings = value.get("map_settings", {})
+    enabled = settings.get("subdivision_countries", ["GB"]) if isinstance(settings, dict) else ["GB"]
+    if not isinstance(enabled, list):
+        enabled = ["GB"]
+    supported = get_geography().subdivision_countries
+    return {
+        "travellers": travellers,
+        "groups": groups,
+        "map_settings": {"subdivision_countries": sorted({
+            code for code in enabled if isinstance(code, str) and code in supported
+        })},
+    }
 
 
 def _require_id(value: Any) -> str:
@@ -119,7 +150,26 @@ def _members(data: dict[str, Any], value: Any) -> list[str]:
 
 def apply_change(data: dict[str, Any], action: str, message: dict[str, Any]) -> None:
     """Apply one validated websocket mutation to the in-memory data."""
+    if not isinstance(action, str) or action not in ACTION_FIELDS:
+        raise ValueError("Unknown action")
+    if set(message) - {"id", "type", "action"} - ACTION_FIELDS[action]:
+        raise ValueError("Unexpected fields for action")
     target_id = message.get("target_id")
+
+    if action == "set_map_detail":
+        code = valid_country_code(message.get("country"))
+        if code not in get_geography().subdivision_countries:
+            raise ValueError("Subdivision detail is not supported for this country")
+        enabled = message.get("enabled")
+        if not isinstance(enabled, bool):
+            raise ValueError("Enabled must be a boolean")
+        countries = set(data["map_settings"]["subdivision_countries"])
+        if enabled:
+            countries.add(code)
+        else:
+            countries.discard(code)
+        data["map_settings"]["subdivision_countries"] = sorted(countries)
+        return
 
     if action == "add_traveller":
         ident = uuid.uuid4().hex
@@ -141,13 +191,16 @@ def apply_change(data: dict[str, Any], action: str, message: dict[str, Any]) -> 
             group["members"] = [member for member in group["members"] if member != ident]
         return
 
-    if action == "toggle_country":
+    if action in {"toggle_country", "set_visit"}:
         traveller = _require_traveller(data, target_id)
-        code = valid_country_code(message.get("country"))
+        code = valid_country_code(message.get("location" if action == "set_visit" else "country"))
         countries = traveller["countries"]
-        if code in countries:
+        visited = message.get("visited") if action == "set_visit" else code not in countries
+        if not isinstance(visited, bool):
+            raise ValueError("Visited must be a boolean")
+        if not visited and code in countries:
             countries.remove(code)
-        else:
+        elif visited and code not in countries:
             countries.append(code)
             countries.sort()
         return

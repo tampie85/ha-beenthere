@@ -1,0 +1,44 @@
+US.geojson
+Source: Natural Earth, 1:50m Admin 1 - States, Provinces, version 5.1.2.
+Source URL:
+https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/geojson/ne_50m_admin_1_states_provinces.geojson
+Terms: https://www.naturalearthdata.com/about/terms-of-use/
+License: Public domain.
+Attribution: Made with Natural Earth.
+
+Derivation: retain features with iso_a2 == "US" (50 states and Washington,
+DC); retain source geometry without simplification; use iso_3166_2 as the
+feature id and properties.id; use BeenThere's geographic catalogue for
+properties.name; omit other source properties; sort by ISO identifier.
+Coordinates remain in WGS84 longitude/latitude. No runtime boundary service
+or additional mapping library is needed for the US regional view.
+
+These are generalized 1:50m cartographic boundaries, not legal or survey
+boundaries. Country-coded US territories are not included in this state map.
+
+AU.geojson and CA.geojson
+Source: Natural Earth, 1:50m Admin 1 - States, Provinces, version 5.1.2.
+Source URL: same pinned 1:50m URL as US.geojson above.
+License: Public domain. Attribution: Made with Natural Earth.
+Derivation: select iso_a2 AU or CA; retain only iso_3166_2 identifiers present
+in BeenThere's catalogue (8 Australian states/territories; 13 Canadian
+provinces/territories). Retain WGS84 geometry without simplification; set
+feature id and properties.id to the catalogue code and properties.name to
+the catalogue name. Omit other properties and sort by identifier.
+
+DE.geojson and GB.geojson
+Source: Natural Earth, 1:10m Admin 1 - States, Provinces, version 5.1.2.
+Source URL:
+https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/geojson/ne_10m_admin_1_states_provinces.geojson
+License: Public domain. Attribution: Made with Natural Earth.
+Derivation: Germany uses its 16 catalogue-matching iso_3166_2 identifiers.
+For the UK, group all 232 iso_a2 GB features by their geonunit values:
+England (152), Scotland (32), Wales (22), Northern Ireland (26). Map these
+to GB-ENG, GB-SCT, GB-WLS and GB-NIR respectively. Repair source geometries
+with Shapely make_valid and dissolve each constituent-country group with
+union_all, removing internal local-authority borders. Germany and UK
+geometries are simplified at 0.005 degrees with preserve_topology=True.
+Use catalogue identifiers/names, omit source properties, sort by identifier.
+Coordinates remain WGS84. Shapely is an offline derivation tool only, not a
+Home Assistant runtime dependency. Generalized cartographic boundaries are
+not legal or survey boundaries. Crown dependencies are not UK subdivisions.

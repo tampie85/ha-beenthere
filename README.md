@@ -4,11 +4,93 @@ BeenThere adds a dedicated **BeenThere** sidebar page to Home
 Assistant. Open it to manage travellers and groups and track visited countries
 on the interactive map. The page uses the integration's existing stored data.
 
-Map selection is at country and territory level, not state or province level.
-Territories with their own country code remain separate from their administering
-country: France and French Guiana, for example, are independent selections.
-Existing subdivision visits are retained in storage but are not shown or
-automatically converted into country visits.
+The world map shows country and territory outlines. Subdivision detail can be
+enabled independently for the United Kingdom, United States, Australia, Canada,
+and Germany. Their boundaries and region records are bundled locally.
+Territories with their own country code remain separate from their
+administering country: France and French Guiana, for example, are independent
+selections.
+
+## Geographic model and regional tracking
+
+The backend has a shared geographic catalogue in `geography.json` and a
+version-2 storage model. Global map-detail controls are available in the
+administrator Settings panel. When subdivision detail is enabled, region
+boundaries appear on the main map and the country list shows the country-level
+visit control and its individual region controls. Only explicitly visited
+regions are filled; a country-level visit does not fill any region. Administrators
+viewing one traveller can change country and region visits independently.
+Keyboard users can focus map boundaries and press Enter or Space. Clicking a
+map area or a list entry highlights the corresponding area in both views.
+
+Group and Everyone views show the **union** of explicit visits across their
+selected members, not an intersection. All group views are read-only, including
+for administrators. Selecting a map area or list entry identifies the selected
+travellers who recorded that exact region; country details include travellers
+with an explicit country visit or at least one known region visit. Outsiders are
+not included. Individual non-administrator views are also read-only. An explicit
+country visit never implies any subdivision visits.
+
+The world map and country count treat a country as visited either because it is
+explicitly recorded or because at least one of its subdivisions is explicitly
+recorded. With subdivision detail enabled, only the explicitly visited regions
+are filled and the country-level state is shown separately in the list. When
+detail is disabled, the country is shown as one visited shape if it has an
+explicit visit or any region visit. The region list and `visited_subdivisions`
+remain exact and are unaffected by country-level visits. Unknown historical
+IDs are retained but never used to infer parent visits.
+
+The main traveller/group selector and continent filter control the map.
+Country-level visits can be managed separately from region visits in the
+country list or country search. Removing an explicit country visit leaves
+region visits untouched. If regions are hidden and a country's visited state
+comes only from those regions, the UI explains that subdivision detail must be
+enabled to remove them. Visit controls are disabled during a pending write; a
+failed write leaves the published visit state unchanged, shows an error and
+permits retry. Changes synchronize across open panels. Disabling a country's
+detail setting hides regional boundaries and entries without deleting history
+or losing derived country highlights.
+
+The catalogue separates countries/territories from their subdivisions. It covers
+all 249 ISO 3166-1 alpha-2 identifiers and retains the existing map's `XK` identifier
+for Kosovo as an explicit non-ISO compatibility exception. Subdivision identifiers
+follow ISO 3166-2: the four UK constituent countries, 50 US states and Washington,
+DC, six Australian states and ACT/NT, 10 Canadian provinces and three territories,
+and 16 German federal states. Russian subdivisions are not supported. Azores and
+Madeira remain valid legacy locations, without adding Portugal detail settings.
+Identifiers were checked against an ISO reference using development-only tooling;
+no ISO lookup library or online service is required at runtime.
+
+Each traveller's existing `countries` array holds **explicit location IDs**, not
+inferred visits. `US` and `US-CA` may coexist. The backend's geographic helpers
+derive one visited country from California and Florida, while retaining two
+subdivision visits. A country visit never implies visits to all its subdivisions.
+Removing an explicit country visit does not remove its children. Independent
+country-coded territories remain independent: visiting French Guiana does not
+imply visiting France. The panel now applies this same derivation when drawing
+the world map and the "Visited" summary and list; the regional list itself still
+shows each subdivision's exact, non-inferred state.
+
+Global settings live separately under `map_settings.subdivision_countries`, with
+`["GB"]` as the default. Administrators can enable or disable the five supported
+countries from the Settings panel; the preference is shared by all travellers and
+groups and does not change saved visits. Geographic metadata is not copied into
+traveller history or map settings. Changes are synchronized to other open panels
+through the existing `beenthere_updated` event.
+
+The existing `beenthere/get`, `beenthere/change` and `toggle_country` contracts are
+retained. Administrators may also call `beenthere/change` with action `set_visit`,
+`target_id` for a traveller, `location` for a catalogue ID, and a boolean `visited`.
+This operation is idempotent and changes only the exact explicit location.
+Unknown location IDs, non-boolean states and action-inappropriate fields are
+rejected before saving. Group IDs cannot be used as traveller targets.
+
+Storage upgrades from version 1 add default global settings without converting
+visits or changing traveller/group IDs. Unsupported storage versions fail rather
+than resetting history. Loading retains well-formed unknown historical IDs, so a
+future catalogue change cannot silently discard them; unknown IDs do not acquire
+inferred parent visits and cannot be added through new writes. Back up storage
+before upgrading. Downgrading from storage version 2 is not supported.
 
 After updating the integration, restart Home Assistant to register the sidebar
 page. Its URL is `/beenthere`. Refresh the browser if the new sidebar
@@ -25,11 +107,16 @@ manage groups, or change visits. These permissions are enforced by the backend,
 not just by hiding editing controls. BeenThere does not provide private records
 for individual Home Assistant users.
 
-The map currently loads country boundaries from Natural Earth on GitHub and
-flag images from FlagCDN. These browser requests require internet access and
+The world map currently loads country boundaries from Natural Earth on GitHub
+and flag images from FlagCDN. These browser requests require internet access and
 expose the browser's IP address and requested resources to those services.
 Country outlines have no explicit offline fallback yet. No travel history is
 included in the boundary request; requested flag URLs identify individual flags.
+Subdivision maps for all five supported countries are bundled locally and make
+no external boundary requests. Their generalized 1:50m boundaries are Natural
+Earth v5.1.2 public-domain data, not legal/survey boundaries. Provenance,
+license and extraction details are in `frontend/maps/SOURCES.txt`. No new
+mapping framework or runtime dependency is required.
 
 ## Storage and recovery
 
@@ -69,8 +156,17 @@ python3 -m pytest -q
 The tests retain their `unittest` fixtures and assertions; pytest is an
 alternative runner and needs no async plugin. The flat `tests/` directory
 groups storage validation, traveller/group operations, persistence, integration
-lifecycle/WebSocket contracts and frontend behaviour. Shared loaders and the
+lifecycle/WebSocket contracts, geographic hierarchy and frontend behaviour. Shared loaders and the
 backend harness live in `tests/helpers.py`; frontend setup stays local.
+
+Optional Chromium browser checks exercise the actual bundled US boundaries,
+state selection, group unions and member details, explicit/derived country
+states, failed/pending saves, cross-panel settings changes and mobile layouts.
+In the separate development environment, install `playwright`, run
+`python3 -m playwright install chromium`, then run
+`python3 -B -m unittest discover -s tests -p 'test_frontend_browser.py' -v`.
+Backend persistence tests separately verify save failures, idempotency,
+concurrent writes and reloads through Home Assistant boundary doubles.
 
 To measure Python line and branch coverage:
 
@@ -94,3 +190,5 @@ from a release tag with `git archive --format=zip --output=beenthere.zip <tag>`.
 No release workflow is configured yet. Future custom ZIP or HACS release
 workflows must preserve these exclusions; copying the working directory
 directly does not apply Git archive attributes.
+Include `frontend/maps/US.geojson` and `frontend/maps/SOURCES.txt` in every
+runtime archive. Neither file is export-ignored.

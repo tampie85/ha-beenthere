@@ -19,7 +19,8 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.storage import Store
 
 from .const import CARD_URL, DOMAIN, PANEL_PATH, PANEL_URL, STORAGE_VERSION, UPDATED_EVENT
-from .storage import apply_change, create_default_data, normalize_data
+from .geography import get_geography
+from .storage import ACTION_FIELDS, apply_change, create_default_data, migrate_data, normalize_data
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -41,17 +42,28 @@ GET_COMMAND = {
 
 CHANGE_COMMAND = {
     vol.Required("type"): f"{DOMAIN}/change",
-    vol.Required("action"): str,
+    vol.Required("action"): vol.In(ACTION_FIELDS),
     vol.Optional("target_id"): str,
     vol.Optional("name"): str,
     vol.Optional("country"): str,
     vol.Optional("members"): [str],
+    vol.Optional("location"): str,
+    vol.Optional("visited"): bool,
+    vol.Optional("enabled"): bool,
 }
+
+
+class BeenThereStore(Store):
+    """Versioned storage with an explicit, non-destructive upgrade boundary."""
+
+    async def _async_migrate_func(self, old_major_version, old_minor_version, old_data):
+        """Upgrade data using Home Assistant's Store migration contract."""
+        return migrate_data(old_major_version, old_minor_version, old_data)
 
 
 def _store(hass: HomeAssistant, entry: ConfigEntry) -> Store:
     """Return the persistent storage instance."""
-    return Store(
+    return BeenThereStore(
         hass,
         STORAGE_VERSION,
         f"{DOMAIN}.{entry.entry_id}",
@@ -134,6 +146,7 @@ async def async_setup_entry(
 ) -> bool:
     """Set up one BeenThere config entry."""
 
+    await hass.async_add_executor_job(get_geography)
     store = _store(hass, entry)
 
     data = normalize_data(
@@ -152,6 +165,19 @@ async def async_setup_entry(
                     (CARD_URL, "beenthere-card.js"),
                     (PANEL_URL, "beenthere-panel.js"),
                 )
+            ] + [
+                StaticPathConfig(
+                    f"/{DOMAIN}/maps/{code}.geojson",
+                    str(Path(__file__).parent / "frontend" / "maps" / f"{code}.geojson"),
+                    cache_headers=False,
+                )
+                for code in sorted(get_geography().subdivision_countries)
+            ] + [
+                StaticPathConfig(
+                    f"/{DOMAIN}/geography.json",
+                    str(Path(__file__).with_name("geography.json")),
+                    cache_headers=False,
+                )
             ]
         )
         hass.data[DOMAIN]["static_registered"] = True
@@ -162,7 +188,7 @@ async def async_setup_entry(
         frontend_url_path=PANEL_PATH,
         sidebar_title="BeenThere",
         sidebar_icon="mdi:map-marker-check",
-        module_url=f"{PANEL_URL}?v=2",
+        module_url=f"{PANEL_URL}?v=7",
         embed_iframe=False,
         require_admin=False,
     )

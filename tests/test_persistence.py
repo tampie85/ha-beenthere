@@ -7,11 +7,43 @@ from helpers import BackendTestCase
 
 
 class PersistenceTests(BackendTestCase):
+    async def test_map_detail_survives_reload_without_changing_traveller_history(self):
+        await self.request("change", action="add_traveller", name="Alice")
+        ident = next(iter((await self.current_data())["travellers"]))
+        await self.request("change", action="set_visit", target_id=ident, location="US-CA", visited=True)
+        for enabled in (True, False, True):
+            await self.request("change", action="set_map_detail", country="US", enabled=enabled)
+        before = self.store.saved
+        await self.integration.async_unload_entry(self.hass, self.entry)
+        self.store.async_load.return_value = before
+        await self.integration.async_setup_entry(self.hass, self.entry)
+        self.assertEqual(await self.current_data(), before)
+        self.assertEqual(before["travellers"][ident]["countries"], ["US-CA"])
+
+    async def test_map_detail_save_failure_does_not_publish_or_notify(self):
+        self.store.async_save.side_effect = OSError("disk unavailable")
+        with self.assertLogs(self.integration.__name__, level="ERROR"):
+            connection = await self.request("change", action="set_map_detail", country="US", enabled=True)
+        self.assertEqual(connection.send_error.call_args.args[1], "storage_error")
+        self.assertEqual((await self.current_data())["map_settings"], {"subdivision_countries": ["GB"]})
+        self.hass.bus.async_fire.assert_not_called()
+
+    async def test_concurrent_settings_and_visit_updates_are_serialized(self):
+        await self.request("change", action="add_traveller", name="Alice")
+        ident = next(iter((await self.current_data())["travellers"]))
+        await asyncio.gather(
+            self.request("change", action="set_map_detail", country="US", enabled=True),
+            self.request("change", action="set_visit", target_id=ident, location="US-CA", visited=True),
+            self.request("change", action="set_map_detail", country="CA", enabled=True),
+        )
+        self.assertEqual(self.store.saved["map_settings"], {"subdivision_countries": ["CA", "GB", "US"]})
+        self.assertEqual(self.store.saved["travellers"][ident]["countries"], ["US-CA"])
+
     async def test_store_uses_private_atomic_writes(self):
-        with patch.object(self.integration, "Store") as store_type:
+        with patch.object(self.integration, "BeenThereStore") as store_type:
             self.make_store(self.hass, self.entry)
         store_type.assert_called_once_with(
-            self.hass, 1, "beenthere.entry", private=True, atomic_writes=True,
+            self.hass, 2, "beenthere.entry", private=True, atomic_writes=True,
         )
 
     async def test_failed_save_does_not_publish_candidate(self):
@@ -42,3 +74,32 @@ class PersistenceTests(BackendTestCase):
         release.set()
         await asyncio.gather(first, second)
         self.assertEqual(len(self.store.saved["travellers"]), 2)
+
+    async def test_failed_visit_save_preserves_published_history_and_can_retry(self):
+        await self.request("change", action="add_traveller", name="Alice")
+        ident = next(iter((await self.current_data())["travellers"]))
+        self.store.async_save.side_effect = OSError("disk unavailable")
+        self.hass.bus.async_fire.reset_mock()
+        with self.assertLogs(self.integration.__name__, level="ERROR"):
+            connection = await self.request(
+                "change", action="set_visit", target_id=ident, location="US-CA", visited=True,
+            )
+        self.assertEqual(connection.send_error.call_args.args[1], "storage_error")
+        self.assertEqual((await self.current_data())["travellers"][ident]["countries"], [])
+        self.hass.bus.async_fire.assert_not_called()
+        self.store.async_save.side_effect = self.store.save
+        for repeat in range(2):
+            connection = await self.request(
+                "change", action="set_visit", target_id=ident, location="US-CA", visited=True,
+            )
+            connection.send_error.assert_not_called()
+        self.assertEqual(self.store.saved["travellers"][ident]["countries"], ["US-CA"])
+
+    async def test_concurrent_subdivision_visits_do_not_overwrite_each_other(self):
+        await self.request("change", action="add_traveller", name="Alice")
+        ident = next(iter((await self.current_data())["travellers"]))
+        await asyncio.gather(*(
+            self.request("change", action="set_visit", target_id=ident, location=code, visited=True)
+            for code in ("US-CA", "US-FL", "US-CA")
+        ))
+        self.assertEqual(self.store.saved["travellers"][ident]["countries"], ["US-CA", "US-FL"])

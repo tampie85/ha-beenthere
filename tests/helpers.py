@@ -11,8 +11,11 @@ from unittest.mock import AsyncMock, Mock, patch
 
 COMPONENT_ROOT = Path(__file__).resolve().parent.parent
 
+_package = ModuleType("beenthere_domain_test")
+_package.__path__ = [str(COMPONENT_ROOT)]
+sys.modules[_package.__name__] = _package
 _storage_spec = importlib.util.spec_from_file_location(
-    "beenthere_storage", COMPONENT_ROOT / "storage.py",
+    f"{_package.__name__}.storage", COMPONENT_ROOT / "storage.py",
 )
 _storage = importlib.util.module_from_spec(_storage_spec)
 assert _storage_spec.loader is not None
@@ -22,6 +25,8 @@ apply_change = _storage.apply_change
 normalize_data = _storage.normalize_data
 valid_country_code = _storage.valid_country_code
 valid_name = _storage.valid_name
+get_geography = _storage.get_geography
+migrate_data = _storage.migrate_data
 
 
 class MemoryStore:
@@ -81,6 +86,7 @@ class BackendTestCase(unittest.IsolatedAsyncioTestCase):
         self.integration, self.websocket = load_integration()
         self.hass = SimpleNamespace(
             data={}, commands={},
+            async_add_executor_job=AsyncMock(side_effect=lambda function: function()),
             http=SimpleNamespace(async_register_static_paths=AsyncMock()),
             bus=SimpleNamespace(async_fire=Mock()),
         )

@@ -232,6 +232,23 @@ class FrontendTests(unittest.TestCase):
         self.assertTrue(self.context.eval("effective.has('GF')"))
         self.assertEqual(self.context.eval("card.visited(card.chosen()).size"), 4)
 
+    def test_sidebar_countries_are_unique_and_sorted_by_display_name(self):
+        self.context.eval("""
+            card.data.travellers.alice.countries=['US','US-CA','GF'];
+            card.catalogue={countries:{'North America':{US:'United States'},'South America':{GF:'French Guiana'}},
+                subdivisions:{US:{'US-CA':'California'}}};
+        """)
+        self.assertEqual(
+            self.context.eval("card.visitedCountries().map(country=>country.code).join(',')"),
+            "GF,US",
+        )
+        self.context.eval("""
+            card.data.travellers.bob={name:'Bob',countries:['US-FL']};
+            card.data.groups.pair={name:'Pair',members:['alice','bob']};
+            card.selection='g:pair';
+        """)
+        self.assertEqual(self.context.eval("card.visitedCountries().map(country=>country.code).join(',')"), "GF,US")
+
     def test_regions_for_uses_catalogue_and_is_name_sorted(self):
         self.context.eval("""
             card.catalogue={countries:{'North America':{US:'United States'}},

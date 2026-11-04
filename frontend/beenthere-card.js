@@ -29,7 +29,7 @@ class VisitedCountriesCard extends HTMLElement {
     this.config = config;
     this.selection = this.selection || '';
     this.continent = this.continent || 'World';
-    this.collapsedCountries ||= new Set();
+    this.expandedCountries ||= new Set();
     this.focusedCountry ||= null;
     this.render();
   }
@@ -250,6 +250,9 @@ class VisitedCountriesCard extends HTMLElement {
     return {type:'all',name:'Everyone',members:Object.keys(t)};
   }
   selectedMembers(view) { return view.type==='traveller'?[view.id]:view.members; }
+  resetRegionExpansion() {
+    this.expandedCountries.clear();
+  }
   visited(view) {
     return new Set(this.selectedMembers(view).flatMap(id=>this.data?.travellers?.[id]?.countries||[]));
   }
@@ -269,6 +272,12 @@ class VisitedCountriesCard extends HTMLElement {
     }
     return codes;
   }
+  visitedCountries(view=this.chosen()) {
+    const names=this.countryNames(this.geo?.features||[]);
+    return [...this.effectiveCountries(view)].map(code=>({
+      code,name:names.get(code)||this.countryNameFromCatalogue(code),
+    })).sort((first,second)=>first.name.localeCompare(second.name));
+  }
   visitors(code, view=this.chosen()) {
     return this.selectedMembers(view).filter(id=>{
       const explicit=this.data?.travellers?.[id]?.countries||[];
@@ -280,11 +289,31 @@ class VisitedCountriesCard extends HTMLElement {
     if(effective.has(code))return 'Visited via subdivisions';
     return 'Not visited';
   }
-  async setLocationVisit(code, visited, focusAttribute='data-region') {
+  confirmCountryVisitRemoval(code, view=this.chosen()) {
+    if(this.parentCountry(code)||!this.visited(view).has(code))return true;
+    const country=this.visitedCountries(view).find(item=>item.code===code);
+    return !!country&&confirm(`Remove the country-only visit to ${country.name}? Regional visits, if any, will be preserved.`);
+  }
+  async setLocationVisit(code, visited, focusAttribute='data-location') {
     const view=this.chosen();
     if(view.type!=='traveller'||!this.canEdit()||this._pendingChanges)return;
+    if(!visited&&!this.confirmCountryVisitRemoval(code,view))return;
     await this.change('set_visit',{id:view.id,location:code,visited});
-    this.querySelector(`[${focusAttribute}="${code}"]`)?.focus({preventScroll:true});
+    const target=this.querySelector(`[${focusAttribute}="${code}"]`)
+      ||this.querySelector(`.country[data-country-shape="${code}"]`);
+    target?.focus({preventScroll:true});
+  }
+  async removeCountryVisit(code) {
+    const view=this.chosen();
+    if(view.type!=='traveller'||!this.canEdit()||this._pendingChanges||!this.visited(view).has(code))return;
+    if(!this.confirmCountryVisitRemoval(code,view))return;
+    this.selectedLocation=code;
+    this.focusedCountry=code;
+    await this.change('set_visit',{id:view.id,location:code,visited:false});
+    if(this.error)return;
+    if(typeof requestAnimationFrame==='function') {
+      requestAnimationFrame(()=>this.querySelector('.country.selected')?.focus({preventScroll:true}));
+    }
   }
   regionsFor(code) {
     const subdivisions=this.catalogue?.subdivisions?.[code];
@@ -347,7 +376,7 @@ class VisitedCountriesCard extends HTMLElement {
       ||!this.regionsFor(parent).some(region=>region.code===code))return;
     this.selectedLocation=code;
     this.focusedCountry=parent;
-    this.collapsedCountries.delete(parent);
+    this.expandedCountries.add(parent);
     if(toggle&&this.chosen().type==='traveller'&&this.canEdit()) {
       this.scheduleRender();
       this.setLocationVisit(code,!this.visited(this.chosen()).has(code),'data-location');
@@ -360,15 +389,18 @@ class VisitedCountriesCard extends HTMLElement {
   }
   selectLocation(code) {
     const parent=this.parentCountry(code);
+    const country=parent||code;
+    if(this.continent!=='World'
+      &&!this.visibleFeatures().some(feature=>this.iso(feature)===country)) {
+      this.continent='World';
+      this.resetRegionExpansion();
+    }
     if(parent) {
       if(!this.subdivisionTrackingEnabled(parent))return;
-      this.collapsedCountries.delete(parent);
+      this.expandedCountries.add(parent);
       this.focusedCountry=parent;
     } else {
       this.focusedCountry=code;
-      if(this.subdivisionTrackingEnabled(code)&&this.regionsFor(code).length) {
-        this.collapsedCountries.delete(code);
-      }
     }
     this.selectedLocation=code;
     this.scheduleRender();
@@ -482,7 +514,6 @@ class VisitedCountriesCard extends HTMLElement {
   render() {
     if(!this.config)return;
     const focusedDetail = this.querySelector('[data-map-detail]:focus')?.dataset.mapDetail;
-    const focusedRegion = this.querySelector('[data-region]:focus')?.dataset.region;
     const focusedLocation = this.querySelector('[data-location]:focus')?.dataset.location;
     const data=this.data||{travellers:{},groups:{}};
     const view=this.chosen();
@@ -491,40 +522,23 @@ class VisitedCountriesCard extends HTMLElement {
     const features=this.visibleFeatures();
     const bounds=this.mapBounds(features);
     const countryCodes=new Set(features.map(feature=>this.iso(feature)).filter(Boolean));
-    const visibleVisited=new Set([...countryCodes].filter(code=>derivedCountries.has(code)));
     const countryNames=this.countryNames(features);
     const resultFeature=this.searchResult?features.find(feature=>this.iso(feature)===this.searchResult):null;
     const searchOptions=[...countryCodes].map(code=>countryNames.get(code)).sort((first,second)=>first.localeCompare(second)).map(name=>`<option value="${this.esc(name)}"></option>`).join('');
     const enabledRegionalCodes=(this.catalogue?.subdivision_countries||[])
       .filter(code=>this.subdivisionTrackingEnabled(code)&&this.regionsFor(code).length
         &&(this.continent==='World'||countryCodes.has(code)));
-    const menuCountryCodes=new Set([
-      ...countryCodes,
-      ...visibleVisited,
-      ...enabledRegionalCodes,
-      ...(this.searchResult&&countryCodes.has(this.searchResult)?[this.searchResult]:[]),
-    ]);
-    const menuCountries=[...menuCountryCodes].map(code=>({
-      code,name:countryNames.get(code)||this.countryNameFromCatalogue(code),
-    })).sort((first,second)=>first.name.localeCompare(second.name));
+    const menuCountries=this.visitedCountries(view);
     enabledRegionalCodes.forEach(code=>this.ensureRegionalMap(code));
     const regionalShapes=enabledRegionalCodes.flatMap(parent=>this.regionalMaps?.[parent]?.features||[])
       .filter(feature=>this.parentCountry(feature.properties?.id));
-    const percentage=countryCodes.size?Math.round(visibleVisited.size/countryCodes.size*100):0;
     const continentOptions=['World',...CONTINENTS].map(continent=>`<option value="${continent}" ${this.continent===continent?'selected':''}>${continent}</option>`).join('');
     const options=this.viewOptions();
     const selectedLocation=this.selectedLocation;
-    const selectedParent=selectedLocation?this.parentCountry(selectedLocation):null;
-    const selectedLocationName=selectedLocation
-      ? selectedParent
-        ? this.regionsFor(selectedParent).find(region=>region.code===selectedLocation)?.name
-        : countryNames.get(selectedLocation)||this.countryNameFromCatalogue(selectedLocation)
-      : null;
-    const selectedVisitors=selectedLocation?this.visitors(selectedLocation,view):[];
     const shapes=features.map((f,i)=>{
       const code=this.iso(f),active=code&&derivedCountries.has(code);
       const regional=this.subdivisionTrackingEnabled(code)&&this.regionsFor(code).length>0;
-      return `<path data-idx="${i}" class="country ${active?'active ':''}${regional?'regional-detail ':''}${this.selectedLocation===code?'selected':''}" d="${this.countryPath(f)}" tabindex="0" role="button" aria-label="${this.esc(this.name(f))}" aria-pressed="${!!active}" aria-current="${this.selectedLocation===code}"><title>${this.esc(this.name(f))}: ${this.esc(this.visitStatus(code,view,visited,derivedCountries))}</title></path>`;
+      return `<path data-idx="${i}" data-country-shape="${this.esc(code||'')}" class="country ${active?'active ':''}${regional?'regional-detail ':''}${this.selectedLocation===code?'selected':''}" d="${this.countryPath(f)}" tabindex="0" role="button" aria-label="${this.esc(this.name(f))}" aria-pressed="${!!active}" aria-current="${this.selectedLocation===code}"><title>${this.esc(this.name(f))}: ${this.esc(this.visitStatus(code,view,visited,derivedCountries))}</title></path>`;
     }).join('');
     const subdivisionShapes=regionalShapes.map(feature=>{
       const code=feature.properties.id;
@@ -541,11 +555,10 @@ class VisitedCountriesCard extends HTMLElement {
       .manager{margin-top:16px;border:1px solid #234a61;background:#112b3f;border-radius:8px;padding:16px}.manager-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:24px}.manager section{display:flex;flex-direction:column;gap:12px;min-width:0}.manager h3{margin:0;font-size:15px;font-weight:650;color:#b6e8f1;letter-spacing:0}.manager-help{margin:-6px 0 0;color:#9bb4c8;font-size:12px;line-height:1.45}.manager-list{display:flex;flex-direction:column;gap:6px;flex:1}.manager-list:empty::before{content:attr(data-empty);color:#9bb4c8;font-size:13px;padding:10px 0}.chip{display:grid;grid-template-columns:minmax(0,1fr) 36px 36px;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid #27445c;font-size:14px}.chip-name{overflow-wrap:anywhere;min-width:0}.chip-name small{display:block;color:#9bb4c8;font-size:12px;margin-top:3px}.manager button{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 10px;border-radius:6px;font-size:13px;letter-spacing:0}.manager button ha-icon{--mdc-icon-size:18px;flex-shrink:0}.chip button{width:36px;padding:0;background:transparent}.chip button:hover{background:#203a51}.chip button[data-delete]:hover,.chip button[data-delete-group]:hover{color:#ffb6ae;border-color:#ffb6ae}.manager .add-button{width:100%;background:#203a51}.manager button:focus-visible,.settings-toggle:focus-visible{outline:2px solid #63f3e5;outline-offset:2px}
       .manager h2{margin:0 0 16px;font-size:18px;font-weight:700;letter-spacing:0;overflow-wrap:anywhere}
       .map-detail-options{display:flex;flex-direction:column;gap:6px}.map-detail-option{display:grid;grid-template-columns:minmax(0,1fr) 24px;align-items:center;gap:12px;min-height:44px;border-bottom:1px solid #27445c;font-size:14px;cursor:pointer}.map-detail-option span{min-width:0;overflow-wrap:anywhere}.map-detail-option input{box-sizing:border-box;width:20px;height:20px;margin:0;padding:0;accent-color:#63f3e5;cursor:pointer}.map-detail-option input:focus-visible{outline:2px solid #63f3e5;outline-offset:3px}.map-detail-option input:disabled{cursor:default}
-      .map-layout{display:grid;grid-template-columns:minmax(0,1fr) 270px;gap:16px;margin-top:14px;align-items:start}.region-panel{min-width:0;border-left:1px solid #31516a;padding-left:16px}.region-panel label{display:block;font-size:13px;color:#b6e8f1;margin-bottom:8px}.region-panel select{box-sizing:border-box;width:100%}.region-panel .stats{flex-direction:column}.region-panel .stat{border:0;border-radius:0;background:transparent;padding:8px 0}.map-layout .map{min-width:0}
+      .map-layout{display:grid;grid-template-columns:minmax(0,1fr) 270px;gap:16px;margin-top:14px;align-items:stretch}.map-column{min-width:0;min-height:0}.region-panel{box-sizing:border-box;contain:size;display:flex;flex-direction:column;gap:12px;min-width:0;min-height:0;overflow:hidden}.region-panel label{display:block;font-size:13px;color:#b6e8f1;margin-bottom:8px}.region-panel select{box-sizing:border-box;width:100%;border-radius:6px;background:#14283a}.region-panel .stats{flex-direction:column}.region-panel .stat{border:0;border-radius:0;background:transparent;padding:8px 0}.map-layout .map{min-width:0}
       .region-panel select+label{margin-top:16px}
       .map-column{min-width:0}.search-row{display:grid;grid-template-columns:1fr 2fr;gap:12px;margin-bottom:12px;align-items:start;min-height:66px}.country-search{align-self:start;display:grid;grid-template-columns:minmax(0,1fr) auto;align-content:start;gap:8px;min-width:0}.country-search input{box-sizing:border-box;min-width:0;width:100%;height:38px;font-size:13px;border-radius:6px}.country-search button{align-self:start;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:38px;min-height:38px;border-radius:6px;font-size:13px}.country-search ha-icon{--mdc-icon-size:18px}.country-search-status{grid-column:1 / -1;margin:0;overflow-wrap:anywhere}.country-search-status:empty{display:none}.search-result{align-self:start;box-sizing:border-box;display:grid;grid-template-columns:32px minmax(0,1fr) auto;gap:10px;align-items:center;min-width:0;min-height:66px;padding:10px 12px;border:1px solid #31516a;border-radius:8px;background:#112b3f}.search-result img{display:block;width:32px;height:22px;object-fit:contain}.search-result-info{min-width:0}.search-result-name{display:block;font-size:14px;font-weight:650;overflow-wrap:anywhere}.search-result-status{display:block;margin-top:3px;color:#9bb4c8;font-size:12px}.search-result button{white-space:nowrap;font-size:12px;padding:7px 9px}.search-result-empty{display:flex;align-items:center;color:#9bb4c8;font-size:13px}
-      .visited-country-list{list-style:none;margin:12px 0 0;padding:0;max-height:320px;max-height:min(320px,40dvh);overflow-y:auto;scrollbar-width:thin}.visited-country-list li{display:grid;grid-template-columns:24px minmax(0,1fr);gap:8px;align-items:center;min-height:36px;padding:6px 0;border-top:1px solid #27445c;font-size:13px;line-height:1.4}.visited-country-list li.selected{background:#18374b}.visited-country-list img,.visited-country-list ha-icon{display:block;width:24px;height:18px;object-fit:contain}.visited-country-list ha-icon{--mdc-icon-size:18px}.visited-country-list span{min-width:0;overflow-wrap:anywhere}.visited-country-list span small{display:block;color:#9bb4c8;font-size:11px;margin-top:2px}.visited-country-list .country-link{display:block;width:100%;padding:0;text-align:left;border:0;background:transparent;color:inherit;font-size:inherit}.visited-country-list .country-link:hover{color:#63f3e5}.visited-subdivision-list{list-style:none;grid-column:2;margin:4px 0 0;padding:0}.visited-subdivision-list li{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:30px;padding:3px 0;border-top:1px solid #203c52;font-size:12px}.visited-subdivision-list li.selected{background:#18374b}.visited-subdivision-list label{display:flex;align-items:center;gap:7px;min-width:0;cursor:pointer}.visited-subdivision-list input{width:17px;height:17px;margin:0;padding:0;accent-color:#63f3e5}.visited-subdivision-list input:disabled{cursor:default}.visited-country-empty{margin:10px 0 0}.country-visit-toggle{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;color:#b6e8f1}.country-visit-toggle input{width:16px;height:16px;margin:0;accent-color:#63f3e5}.location-select{padding:0;border:0;background:transparent;color:inherit;text-align:left;font:inherit}.location-select:hover{color:#63f3e5}.location-visitors{margin-top:12px;padding-top:8px;border-top:1px solid #27445c;font-size:12px}.location-visitors ul{margin:4px 0 0;padding-left:18px;color:#9bb4c8}
-      .visited-country-row{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}.region-link{padding:4px 8px;font-size:12px;background:transparent}
+      .visited-country-section{box-sizing:border-box;display:flex;flex:1;flex-direction:column;min-height:0;overflow:hidden;border:1px solid #31516a;border-radius:11px;background:#112b3f;padding:12px}.visited-country-section .region-title{flex:none}.visited-country-list{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#37536a #112b3f;list-style:none;margin:12px 0 0;padding:0}.visited-country-list::-webkit-scrollbar{width:6px}.visited-country-list::-webkit-scrollbar-track{background:#112b3f}.visited-country-list::-webkit-scrollbar-thumb{border-radius:3px;background:#37536a}.visited-country-item{border-top:1px solid #27445c;font-size:13px;line-height:1.4;transition:background-color .15s ease}.visited-country-item:hover{background:#142d40}.visited-country-item.selected,.visited-subdivision-list li.selected{background:#18374b}.visited-country-row{display:flex;align-items:center;gap:4px;min-width:0;min-height:44px}.visited-country-list .country-link{display:flex;flex:1;align-items:center;gap:8px;min-width:0;min-height:44px;padding:2px 0;border:0;border-radius:0;background:transparent;color:inherit;text-align:left;font-size:inherit;transition:color .15s ease}.visited-country-list .country-link:hover{color:#63f3e5}.visited-country-list .country-link img{display:block;flex:0 0 24px;width:24px;height:18px;object-fit:contain}.visited-country-list .country-name{min-width:0;overflow-wrap:anywhere}.country-actions{display:flex;align-items:center;gap:2px}.region-link,.remove-country-visit{display:inline-flex;flex:0 0 44px;align-items:center;justify-content:center;width:44px;height:44px;padding:0;border:0;border-radius:0;background:transparent;color:#9bb4c8;transition:background-color .15s ease,color .15s ease,border-color .15s ease}.region-link:hover{background:#203a51;color:#63f3e5}.region-link ha-icon{--mdc-icon-size:20px}.remove-country-visit{font-size:20px;line-height:1}.remove-country-visit:hover{background:#203a51;color:#ffb6ae}.remove-country-visit:focus-visible,.region-link:focus-visible,.visited-country-list .country-link:focus-visible,.visited-subdivision-list .location-select:focus-visible{outline:2px solid #63f3e5;outline-offset:-2px}.remove-country-visit:disabled{cursor:default;opacity:.5}.visited-subdivision-list{list-style:none;margin:0 0 6px;padding:0 0 0 32px}.visited-subdivision-list li{min-height:36px;border-top:1px solid #203c52;font-size:12px}.visited-subdivision-list li.selected{background:#18374b}.location-select{display:block;width:100%;min-height:36px;padding:4px 0;border:0;border-radius:0;background:transparent;color:inherit;text-align:left;font:inherit;transition:color .15s ease}.location-select:hover{color:#63f3e5}.visited-country-empty{flex:1;margin:10px 0 0}
       .map .country,.map .region-shape{outline:none}.map .country:focus-visible{stroke:#fff;stroke-width:2}
       .region-view{margin-top:14px}.region-view #region-back{display:inline-flex;align-items:center;gap:6px;margin-bottom:12px;background:transparent}.region-list{list-style:none;margin:12px 0 0;padding:0}.region-row{display:block;padding:6px 0;border-top:1px solid #27445c;font-size:14px}.region-row label{display:flex;align-items:center;gap:10px;cursor:pointer}.region-row input{width:20px;height:20px;margin:0;padding:0;accent-color:#63f3e5}.region-row input:disabled{cursor:default}
       .country.regional-detail.active{fill:#244159;stroke:#395C74;stroke-dasharray:none;filter:none}.country.regional-detail:focus-visible{stroke:#fff;stroke-width:2}.country.selected,.country.selected:hover{stroke:#fff;stroke-width:1.6;filter:none}.region-shape{fill:#244159;fill-opacity:1;stroke:#395C74;stroke-width:.7;cursor:pointer}.region-shape.active{fill:#23d9cf;fill-opacity:1;stroke:#b4fffb}.region-shape.selected,.region-shape:focus-visible{stroke:#fff;stroke-width:1.6;outline:none}
@@ -555,19 +568,19 @@ class VisitedCountriesCard extends HTMLElement {
     </style><div class="vc">
     <div id="vc-settings" class="manager${this.settingsOpen?'':' hidden'}" role="region" aria-labelledby="vc-settings-title"><h2 id="vc-settings-title">Settings</h2><div class="manager-grid"><section><h3>Travellers</h3><p class="manager-help">Individual people whose visited countries you can track.</p><div id="travellers" class="manager-list" data-empty="No travellers yet">${Object.entries(data.travellers).map(([id,p])=>`<div class="chip"><span class="chip-name">${this.esc(p.name)}</span><button data-rename="${id}" title="Rename traveller" aria-label="Rename ${this.esc(p.name)}"><ha-icon icon="mdi:pencil-outline" aria-hidden="true"></ha-icon></button><button data-delete="${id}" title="Delete traveller" aria-label="Delete ${this.esc(p.name)}"><ha-icon icon="mdi:trash-can-outline" aria-hidden="true"></ha-icon></button></div>`).join('')}</div><button id="add-traveller" class="add-button"><ha-icon icon="mdi:plus" aria-hidden="true"></ha-icon>Add traveller</button></section>
     <section><h3>Groups</h3><p class="manager-help">Show the union of locations visited by any group member. Group maps are read-only.</p><div class="manager-list" data-empty="No groups yet">${Object.entries(data.groups).map(([id,g])=>`<div class="chip"><span class="chip-name">${this.esc(g.name)}<small>${g.members.length} ${g.members.length===1?'traveller':'travellers'}</small></span><button data-edit-group="${id}" title="Edit group" aria-label="Edit ${this.esc(g.name)}"><ha-icon icon="mdi:pencil-outline" aria-hidden="true"></ha-icon></button><button data-delete-group="${id}" title="Delete group" aria-label="Delete ${this.esc(g.name)}"><ha-icon icon="mdi:trash-can-outline" aria-hidden="true"></ha-icon></button></div>`).join('')}</div><button id="add-group" class="add-button"><ha-icon icon="mdi:plus" aria-hidden="true"></ha-icon>Add group</button></section>${this.mapDetailSettings()}</div></div>
-    <div class="map-layout"><div class="map-column"><div class="search-row">
+    <div class="search-row">
     <form id="country-search" class="country-search" aria-label="Find country"><input id="search" type="search" list="country-suggestions" placeholder="Country name" aria-label="Country name" required ${this.geo?'':'disabled'}/><datalist id="country-suggestions">${searchOptions}</datalist><button id="find" type="submit" ${this.geo?'':'disabled'}><ha-icon icon="mdi:magnify" aria-hidden="true"></ha-icon>Find</button><p id="country-search-status" class="muted country-search-status" role="status">${this.esc(this.searchStatus||'')}</p></form>
     ${resultFeature?`<div class="search-result" aria-live="polite"><img src="https://flagcdn.com/w40/${this.flagCode(this.iso(resultFeature))}.png" alt="" width="32" height="22"/><div class="search-result-info"><span class="search-result-name">${this.esc(this.name(resultFeature))}</span><span class="search-result-status">${this.esc(this.visitStatus(this.iso(resultFeature),view))}</span></div>${view.type==='traveller'?`<button id="toggle-search-result" type="button" ${this._pendingChanges?'disabled':''}>${visited.has(this.iso(resultFeature))?'Remove country visit':'Add country visit'}</button>`:''}</div>`:'<div class="search-result search-result-empty" aria-live="polite">Search for a country to see its details.</div>'}
-    </div><div class="map">${this.geo?`<svg viewBox="${bounds}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" role="group" aria-label="Interactive ${this.esc(this.continent)} map">${shapes}${subdivisionShapes}</svg>`:'<p class="muted" style="padding:20px">Loading map… Internet access is required to load country outlines.</p>'}</div></div>
-    <aside class="region-panel" aria-label="Map filters"><label for="continent">Continent</label><select id="continent">${continentOptions}</select><label for="view">Travellers / Groups</label><select id="view">${options}</select><section class="region-summary" aria-label="Visited countries summary"><h2 class="region-title">${this.esc(this.continent)}</h2><p class="progress"><strong>${visibleVisited.size}</strong> out of <strong>${countryCodes.size}</strong> countries visited <strong>(${percentage}%)</strong></p><progress value="${percentage}" max="100" aria-label="${this.esc(this.continent)} countries visited">${percentage}%</progress></section>
-    <section class="region-summary" aria-label="Country and region list"><h2 class="region-title">Countries and regions</h2>${menuCountries.length?`<ul class="visited-country-list" aria-label="Countries">${menuCountries.sort((first,second)=>first.code===this.focusedCountry?-1:second.code===this.focusedCountry?1:first.name.localeCompare(second.name)).map(country=>{const regions=this.regionsFor(country.code);const enabled=this.subdivisionTrackingEnabled(country.code)&&regions.length>0;const count=regions.filter(region=>visited.has(region.code)).length;const explicit=visited.has(country.code);const expanded=enabled&&!this.collapsedCountries.has(country.code);const canChange=this.canEdit()&&view.type==='traveller'&&!this._pendingChanges;const status=explicit?'Country visit recorded':count?'Visited via regions':'Not visited';return `<li class="visited-country-item${this.selectedLocation===country.code||this.parentCountry(this.selectedLocation)===country.code?' selected':''}" data-country-item="${this.esc(country.code)}"><img src="https://flagcdn.com/w40/${country.code==='GB-NIR'?'gb':country.code.startsWith('PT-')?'pt':country.code.toLowerCase()}.png" alt="" width="24" height="18" loading="lazy"/><div><div class="visited-country-row"><span><button type="button" data-country-focus="${this.esc(country.code)}" data-location-select="${this.esc(country.code)}" class="country-link" aria-current="${this.selectedLocation===country.code}">${this.esc(country.name)}</button><small>${this.esc(status)}${regions.length?`; ${count} of ${regions.length} regions visited`:''}</small></span>${enabled?`<button type="button" data-region-toggle="${this.esc(country.code)}" class="region-link" aria-expanded="${expanded}" aria-controls="visited-${this.esc(country.code)}" aria-label="${expanded?'Collapse':'Expand'} regions"><ha-icon icon="mdi:chevron-${expanded?'down':'right'}" aria-hidden="true"></ha-icon></button>`:''}</div><label class="country-visit-toggle"><input type="checkbox" data-country-visit="${this.esc(country.code)}" ${explicit?'checked ':''}${canChange?'':'disabled '}aria-label="Country-level visit for ${this.esc(country.name)}"/>Country visit</label>${!enabled&&count?'<small>Region visits are hidden; enable subdivision tracking to manage them.</small>':''}</div>${expanded?`<ul id="visited-${this.esc(country.code)}" class="visited-subdivision-list">${regions.map(region=>`<li${this.selectedLocation===region.code?' class="selected"':''}><button type="button" class="location-select" data-location-select="${this.esc(region.code)}" aria-current="${this.selectedLocation===region.code}">${this.esc(region.name)}</button><label><input type="checkbox" data-region="${this.esc(region.code)}" ${visited.has(region.code)?'checked ':''}${canChange?'':'disabled '}aria-label="${this.esc(region.name)} in ${this.esc(country.name)}"/></label></li>`).join('')}</ul>`:''}</li>`;}).join('')}</ul>`:`<p class="muted visited-country-empty">${this.geo?'No countries visited in this region.':'Loading countries...'}</p>`}${selectedLocation?`<div class="location-visitors" aria-live="polite"><strong>${this.esc(selectedLocationName||selectedLocation)}</strong><span> visited by ${selectedVisitors.length?selectedVisitors.map(person=>this.esc(person.name)).join(', '):'no selected travellers'}</span></div>`:''}</section>
+    </div><div class="map-layout"><div class="map-column"><div class="map">${this.geo?`<svg viewBox="${bounds}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" role="group" aria-label="Interactive ${this.esc(this.continent)} map">${shapes}${subdivisionShapes}</svg>`:'<p class="muted" style="padding:20px">Loading map… Internet access is required to load country outlines.</p>'}</div></div>
+    <aside class="region-panel" aria-label="Visited countries sidebar"><label for="continent">Continent</label><select id="continent">${continentOptions}</select><label for="view">Travellers / Groups</label><select id="view">${options}</select>
+    <section class="visited-country-section" aria-label="Visited countries"><h2 class="region-title">Visited countries <span class="country-count">(${menuCountries.length})</span></h2>${menuCountries.length?`<ul class="visited-country-list" aria-label="Visited countries">${menuCountries.map(country=>{const regions=this.regionsFor(country.code);const visitedRegions=regions.filter(region=>visited.has(region.code));const expandable=this.subdivisionTrackingEnabled(country.code)&&visitedRegions.length>0;const expanded=expandable&&this.expandedCountries.has(country.code);const canRemove=this.canEdit()&&view.type==='traveller'&&visited.has(country.code);return `<li class="visited-country-item${this.selectedLocation===country.code||this.parentCountry(this.selectedLocation)===country.code?' selected':''}" data-country-item="${this.esc(country.code)}"><div class="visited-country-row"><button type="button" data-location-select="${this.esc(country.code)}" class="country-link" aria-current="${this.selectedLocation===country.code}"><img src="https://flagcdn.com/w40/${this.flagCode(country.code)}.png" alt="" width="24" height="18" loading="lazy"/><span class="country-name">${this.esc(country.name)}</span></button><span class="country-actions">${expandable?`<button type="button" data-region-toggle="${this.esc(country.code)}" class="region-link" aria-expanded="${expanded}" aria-label="${expanded?'Collapse':'Expand'} visited regions in ${this.esc(country.name)}"><ha-icon icon="mdi:chevron-${expanded?'down':'right'}" aria-hidden="true"></ha-icon></button>`:''}${canRemove?`<button type="button" data-remove-country="${this.esc(country.code)}" class="remove-country-visit" aria-label="Remove country-only visit to ${this.esc(country.name)}" title="Remove country-only visit"${this._pendingChanges?' disabled':''}>&times;</button>`:''}</span></div>${expanded?`<ul id="visited-${this.esc(country.code)}" class="visited-subdivision-list" aria-label="Visited regions in ${this.esc(country.name)}">${visitedRegions.map(region=>`<li${this.selectedLocation===region.code?' class="selected"':''}><button type="button" class="location-select" data-location-select="${this.esc(region.code)}" aria-current="${this.selectedLocation===region.code}">${this.esc(region.name)}</button></li>`).join('')}</ul>`:''}</li>`;}).join('')}</ul>`:`<p class="muted visited-country-empty" role="status">${this.data?'No countries visited yet.':'Loading countries...'}</p>`}</section>
     </aside></div>
     ${this.error?`<div class="error" role="alert">${this.esc(this.error)}</div>`:''}
     </div></ha-card>`;
     const viewSelect=this.querySelector('#view');
-    if(viewSelect)viewSelect.onchange=e=>{this.selection=e.target.value;this.scheduleRender();};
+    if(viewSelect)viewSelect.onchange=e=>{this.selection=e.target.value;this.resetRegionExpansion();this.scheduleRender();};
     const continentSelect=this.querySelector('#continent');
-    if(continentSelect)continentSelect.onchange=e=>{this.continent=e.target.value;this.scheduleRender();};
+    if(continentSelect)continentSelect.onchange=e=>{this.continent=e.target.value;this.resetRegionExpansion();this.scheduleRender();};
     const searchForm=this.querySelector('#country-search');
     if(searchForm)searchForm.onsubmit=e=>{
       e.preventDefault();
@@ -584,22 +597,14 @@ class VisitedCountriesCard extends HTMLElement {
     });
     this.querySelectorAll('[data-region-toggle]').forEach(button=>button.onclick=()=>{
       const code=button.dataset.regionToggle;
-      if(this.collapsedCountries.has(code))this.collapsedCountries.delete(code);else this.collapsedCountries.add(code);
+      if(this.expandedCountries.has(code))this.expandedCountries.delete(code);else this.expandedCountries.add(code);
       this.scheduleRender();
-    });
-    this.querySelectorAll('[data-country-focus]').forEach(button=>button.onclick=()=>{
-      const code=button.dataset.countryFocus;
-      this.focusedCountry=code;
-      this.selectLocation(code);
     });
     this.querySelectorAll('[data-location-select]').forEach(button=>button.onclick=()=>{
       this.selectLocation(button.dataset.locationSelect);
     });
-    this.querySelectorAll('[data-country-visit]').forEach(input=>{
-      input.onchange=event=>this.setLocationVisit(input.dataset.countryVisit,event.target.checked,'data-country-visit');
-    });
-    this.querySelectorAll('[data-region]').forEach(input=>{
-      input.onchange=event=>this.setLocationVisit(input.dataset.region,event.target.checked);
+    this.querySelectorAll('[data-remove-country]').forEach(button=>button.onclick=()=>{
+      this.removeCountryVisit(button.dataset.removeCountry);
     });
     this.querySelectorAll('[data-location]').forEach(el=>{
       el.onclick=()=>this.selectRegion(el.dataset.location,true);
@@ -623,7 +628,6 @@ class VisitedCountriesCard extends HTMLElement {
     const toggle=this.querySelector('#toggle-search-result');
     if(toggle){toggle.hidden=!this.canEdit();toggle.disabled=!this.canEdit()||!!this._pendingChanges;}
     if (focusedDetail && !this._pendingChanges) this.querySelector(`[data-map-detail="${focusedDetail}"]`)?.focus();
-    if (focusedRegion && !this._pendingChanges) this.querySelector(`[data-region="${focusedRegion}"]`)?.focus({preventScroll:true});
     if (focusedLocation) this.querySelector(`[data-location="${focusedLocation}"]`)?.focus({preventScroll:true});
   }
   clickCountry(feature) {

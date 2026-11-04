@@ -231,46 +231,153 @@ class PanelBrowserTests(unittest.TestCase):
         self.assertEqual(alaska.evaluate("element=>getComputedStyle(element).fill"), "rgb(36, 65, 89)")
         self.assertEqual(self.errors, [])
 
-    def test_country_and_region_side_controls_manage_explicit_records_separately(self):
+    def test_sidebar_removes_only_explicit_country_visit_with_confirmation(self):
         self.open_panels()
         panel = self.open_us_map()
         country = panel.locator('[data-country-item="US"]')
-        self.assertEqual(country.locator('[data-region]').count(), 51)
-        self.assertFalse(country.locator('[data-country-visit="US"]').is_checked())
-        self.assertTrue(country.locator('[data-region="US-CA"]').is_checked())
-        country.locator('[data-country-visit="US"]').check()
+        self.assertEqual(country.locator('.visited-subdivision-list li').count(), 0)
+        self.assertTrue(country.get_by_role('button', name='Remove country-only visit to United States').count() == 0)
+        self.assertEqual(country.get_by_role('button', name='Expand visited regions in United States').get_attribute('aria-expanded'), 'false')
+        country.get_by_role('button', name='Expand visited regions in United States').click()
+        self.assertEqual(country.locator('.visited-subdivision-list li').count(), 1)
+        self.page.evaluate("renderer(0).setLocationVisit('US',true)")
         self.page.wait_for_function(
             "!renderer(0)._pendingChanges && snapshot.travellers.alice.countries.includes('US')"
         )
-        self.assertIn("US-CA", self.page.evaluate("snapshot.travellers.alice.countries"))
-        country.locator('[data-country-visit="US"]').uncheck()
+        country = panel.locator('[data-country-item="US"]')
+        self.assertEqual(country.locator('.visited-subdivision-list li').count(), 1)
+        messages = []
+        self.page.on("dialog", lambda dialog: (messages.append(dialog.message), dialog.accept()))
+        remove = country.get_by_role('button', name='Remove country-only visit to United States')
+        target = remove.bounding_box()
+        self.assertGreaterEqual(target["width"], 44)
+        self.assertGreaterEqual(target["height"], 44)
+        remove.focus()
+        remove.press('Enter')
         self.page.wait_for_function(
             "!renderer(0)._pendingChanges && !snapshot.travellers.alice.countries.includes('US')"
         )
         self.assertIn("US-CA", self.page.evaluate("snapshot.travellers.alice.countries"))
+        self.assertEqual(country.locator('.visited-subdivision-list li').count(), 1)
+        self.assertEqual(country.get_by_role('button', name='Remove country-only visit to United States').count(), 0)
+        self.assertEqual(len(messages), 1)
+        self.assertIn("Regional visits, if any, will be preserved.", messages[0])
         self.assertEqual(self.errors, [])
 
-    def test_map_and_menu_selection_identify_exact_group_visitors(self):
+    def test_sidebar_remove_cancel_and_failure_preserve_country_visit(self):
+        self.open_panels()
+        panel = self.open_us_map()
+        self.page.evaluate("""
+            snapshot.travellers.alice.countries=['US'];
+            renderer(0).data=JSON.parse(JSON.stringify(snapshot));
+            renderer(0).render();
+        """)
+        remove = panel.get_by_role('button', name='Remove country-only visit to United States')
+        self.page.once("dialog", lambda dialog: dialog.dismiss())
+        remove.click()
+        self.assertIn("US", self.page.evaluate("snapshot.travellers.alice.countries"))
+        self.assertEqual(self.page.evaluate("wsMessages.filter(message=>message.action==='set_visit').length"), 0)
+
+        self.page.evaluate("failNextSave=true;")
+        self.page.once("dialog", lambda dialog: dialog.accept())
+        panel.get_by_role('button', name='Remove country-only visit to United States').click()
+        self.page.wait_for_function(
+            "renderer(0).error==='Storage unavailable' && !renderer(0)._pendingChanges"
+        )
+        self.assertIn("US", self.page.evaluate("snapshot.travellers.alice.countries"))
+        self.assertEqual(panel.locator('[data-remove-country="US"]').count(), 1)
+        self.assertEqual(self.errors, [])
+
+    def test_empty_individual_and_group_views_show_zero_and_empty_message(self):
+        self.open_panels()
+        panel = self.page.locator("beenthere-panel").first
+        self.page.evaluate("""
+            snapshot.travellers.alice.countries=[];
+            snapshot.groups.empty={name:'Empty',members:[]};
+            renderer(0).data=JSON.parse(JSON.stringify(snapshot));
+            renderer(0).selection='t:alice';
+            renderer(0).render();
+        """)
+        self.assertEqual(panel.locator('.country-count').inner_text(), '(0)')
+        self.assertEqual(panel.get_by_text('No countries visited yet.', exact=True).count(), 1)
+        self.assertEqual(panel.locator('.visited-country-item').count(), 0)
+        self.page.evaluate("renderer(0).selection='g:empty'; renderer(0).render();")
+        self.assertEqual(panel.locator('.country-count').inner_text(), '(0)')
+        self.assertEqual(panel.get_by_text('No countries visited yet.', exact=True).count(), 1)
+        self.assertEqual(panel.locator('[data-remove-country]').count(), 0)
+        self.assertEqual(self.errors, [])
+
+    def test_many_visited_countries_scroll_inside_sidebar(self):
+        self.page.set_viewport_size({"width": 1440, "height": 700})
+        self.open_panels()
+        panel = self.page.locator("beenthere-panel").first
+        self.page.evaluate("""
+            const card=renderer(0);
+            snapshot.travellers.alice.countries=Object.values(card.catalogue.countries)
+                .flatMap(Object.keys).slice(0,40).concat(['US-CA','GB-ENG']);
+            snapshot.map_settings.subdivision_countries=['GB','US'];
+            card.data=JSON.parse(JSON.stringify(snapshot));
+            card.render();
+        """)
+        sidebar = panel.locator('.region-panel')
+        country_card = sidebar.locator('.visited-country-section')
+        country_list = sidebar.locator('.visited-country-list')
+        style = country_card.evaluate(
+            "element=>({background:getComputedStyle(element).backgroundColor,"
+            "borderRadius:getComputedStyle(element).borderRadius,"
+            "borderStyle:getComputedStyle(element).borderTopStyle})"
+        )
+        self.assertEqual(style["background"], "rgb(17, 43, 63)")
+        self.assertEqual(style["borderRadius"], "11px")
+        self.assertEqual(style["borderStyle"], "solid")
+        self.assertFalse(sidebar.locator("#continent").evaluate("element=>!!element.closest('.visited-country-section')"))
+        self.assertFalse(sidebar.locator("#view").evaluate("element=>!!element.closest('.visited-country-section')"))
+        panel.get_by_role('button', name='Expand visited regions in United Kingdom').click()
+        panel.get_by_role('button', name='Expand visited regions in United States').click()
+        before = self.page.evaluate("scrollY")
+        country_list.evaluate("element=>element.scrollTop=element.scrollHeight")
+        self.assertGreater(country_list.evaluate("element=>element.scrollTop"), 0)
+        self.assertEqual(sidebar.evaluate("element=>element.scrollTop"), 0)
+        self.assertEqual(self.page.evaluate("scrollY"), before)
+        for width, height in ((1440, 700), (1440, 900), (390, 700)):
+            self.page.set_viewport_size({"width": width, "height": height})
+            dimensions = country_list.evaluate(
+                "element=>({height:element.clientHeight,scrollHeight:element.scrollHeight})"
+            )
+            self.assertGreater(dimensions["scrollHeight"], dimensions["height"])
+            self.assertEqual(sidebar.evaluate("element=>element.scrollHeight"), sidebar.evaluate("element=>element.clientHeight"))
+            map_bounds = panel.locator(".map").bounding_box()
+            card_bounds = country_card.bounding_box()
+            sidebar_bounds = sidebar.bounding_box()
+            self.assertGreater(card_bounds["y"], map_bounds["y"])
+            self.assertAlmostEqual(card_bounds["y"] + card_bounds["height"], map_bounds["y"] + map_bounds["height"])
+            self.assertAlmostEqual(sidebar_bounds["y"] + sidebar_bounds["height"], map_bounds["y"] + map_bounds["height"])
+            self.assertTrue(self.page.evaluate("document.documentElement.scrollWidth<=window.innerWidth"))
+        self.assertEqual(self.errors, [])
+
+    def test_sidebar_selection_focuses_country_and_region_without_mutation(self):
         self.open_panels()
         self.page.evaluate("""
             snapshot.travellers.bob={name:'Bob',countries:['US-FL']};
             snapshot.groups.family.members=['alice','bob'];
         """)
         panel = self.open_us_map("g:family")
-        panel.locator('[data-location="US-FL"]').dispatch_event("click")
-        florida = panel.locator('[data-location="US-FL"]')
-        self.page.wait_for_function(
-            "renderer(0).selectedLocation==='US-FL' && renderer(0).visitors('US-FL').length===1"
-        )
-        self.assertEqual(florida.get_attribute("aria-current"), "true")
-        self.assertIn("Bob", panel.locator(".location-visitors").inner_text())
-        self.assertNotIn("Alice", panel.locator(".location-visitors").inner_text())
+        before = self.page.evaluate("JSON.stringify(snapshot.travellers)")
+        self.page.evaluate("renderer(0).continent='Europe'; renderer(0).render();")
+        country = panel.locator('[data-country-item="US"] [data-location-select="US"]')
+        country.focus()
+        country.press('Enter')
+        self.page.wait_for_function("renderer(0).selectedLocation==='US'")
+        self.assertEqual(self.page.evaluate("renderer(0).continent"), "World")
+        self.assertEqual(panel.locator('.country[aria-label="United States"]').get_attribute("aria-current"), "true")
+        self.assertEqual(panel.locator('[data-country-item="US"] .visited-subdivision-list').count(), 0)
+        panel.get_by_role('button', name='Expand visited regions in United States').click()
         panel.locator('[data-location-select="US-CA"]').click()
         self.page.wait_for_function("renderer(0).selectedLocation==='US-CA'")
         self.assertEqual(panel.locator('[data-location="US-CA"]').get_attribute("aria-current"), "true")
         self.assertEqual(panel.locator('[data-location-select="US-CA"]').get_attribute("aria-current"), "true")
-        self.assertIn("Alice", panel.locator(".location-visitors").inner_text())
-        self.assertNotIn("Bob", panel.locator(".location-visitors").inner_text())
+        self.assertEqual(self.page.evaluate("JSON.stringify(snapshot.travellers)"), before)
+        self.assertEqual(self.page.evaluate("wsMessages.filter(message=>message.type==='beenthere/change').length"), 0)
         self.assertEqual(self.errors, [])
 
     def test_hidden_region_visits_cannot_be_cleared_from_country_map(self):
@@ -298,8 +405,11 @@ class PanelBrowserTests(unittest.TestCase):
         panel.locator('#view').select_option('t:alice')
         panel.locator('#continent').select_option('Europe')
         france = panel.locator('.country[aria-label="France"]')
+        messages = []
+        self.page.once("dialog", lambda dialog: (messages.append(dialog.message), dialog.accept()))
         france.click()
         self.page.wait_for_function("!renderer(0)._pendingChanges && !snapshot.travellers.alice.countries.includes('FR')")
+        self.assertIn("Regional visits, if any, will be preserved.", messages[0])
         self.assertNotIn("active", france.get_attribute("class"))
         france.focus()
         france.press("Enter")
@@ -345,14 +455,18 @@ class PanelBrowserTests(unittest.TestCase):
             snapshot.groups.family.members=['alice','bob'];
         """)
         panel = self.open_us_map("g:family")
+        self.assertEqual(panel.locator('.country-count').inner_text(), '(2)')
         before = self.page.evaluate("JSON.stringify(snapshot.travellers)")
         for code in ("US-CA", "US-FL"):
             self.assertIn("active", panel.locator(f'[data-location="{code}"]').get_attribute("class"))
         self.assertNotIn("active", panel.locator('[data-location="US-AK"]').get_attribute("class"))
-        self.assertTrue(panel.get_by_role('button', name='Collapse regions').is_visible())
+        self.assertTrue(panel.get_by_role('button', name='Expand visited regions in United States').is_visible())
+        panel.get_by_role('button', name='Expand visited regions in United States').click()
+        self.assertTrue(panel.get_by_role('button', name='Collapse visited regions in United States').is_visible())
         self.assertEqual(panel.locator("#details").count(), 0)
-        self.assertEqual(panel.locator('[data-region]').count(), 51)
-        self.assertEqual(panel.locator('[data-region]:not(:disabled)').count(), 0)
+        self.assertEqual(panel.locator('.visited-subdivision-list li').count(), 2)
+        self.assertEqual(panel.locator('.visited-subdivision-list input').count(), 0)
+        self.assertEqual(panel.locator('[data-remove-country]').count(), 0)
         self.assertEqual(self.page.evaluate("JSON.stringify(snapshot.travellers)"), before)
         self.assertEqual(self.page.evaluate("wsMessages.filter(message=>message.type==='beenthere/change').length"), 0)
         self.assertNotIn("partial", panel.locator('.country[data-idx="0"]').get_attribute("class"))
@@ -495,19 +609,26 @@ class PanelBrowserTests(unittest.TestCase):
                 self.page.screenshot(path=str(Path(tempfile.gettempdir()) / f"beenthere-settings-{width}.png"), full_page=True)
         self.assertEqual(self.errors, [])
 
-    def test_visited_country_focus_expands_all_regions_with_visited_checked(self):
+    def test_visited_country_expands_only_visited_regions(self):
         self.open_panels()
         panel = self.open_us_map()
         self.assertEqual(panel.locator('.regional-checklists, .regional-checklist').count(), 0)
         self.assertEqual(panel.get_by_role("button", name="Regions", exact=True).count(), 0)
         country = panel.locator('.visited-country-item', has_text='United States')
-        self.assertIn('1 of 51 regions visited', country.inner_text())
+        self.assertEqual(panel.locator('.visited-country-item').count(), 2)
         country.get_by_role('button', name='United States', exact=True).click()
-        self.assertEqual(panel.locator('.visited-country-list > li').first.get_attribute('data-country-item'), 'US')
-        self.assertEqual(country.locator('.visited-subdivision-list li').count(), 51)
+        self.assertFalse(country.locator('.visited-subdivision-list').count())
+        country.get_by_role('button', name='Expand visited regions in United States').click()
+        self.assertEqual(
+            panel.locator('.visited-country-list > li').evaluate_all(
+                "items=>items.map(item=>item.dataset.countryItem)"
+            ),
+            ["FR", "US"],
+        )
+        self.assertEqual(country.locator('.visited-subdivision-list li').count(), 1)
         self.assertIn('California', country.locator('.visited-subdivision-list').inner_text())
-        self.assertTrue(country.get_by_role('checkbox', name='California in United States', exact=True).is_checked())
-        self.assertFalse(country.get_by_role('checkbox', name='Alabama in United States', exact=True).is_checked())
+        self.assertEqual(country.locator('.visited-subdivision-list input').count(), 0)
+        self.assertEqual(country.get_by_role('button', name='Remove country-only visit to United States').count(), 0)
         california = panel.locator('[data-location="US-CA"]')
         california.focus()
         california.press('Space')
@@ -521,7 +642,47 @@ class PanelBrowserTests(unittest.TestCase):
             "target_id": "alice", "location": "US-CA", "visited": False,
         }])
         country = panel.locator('.visited-country-item[data-country-item="US"]')
-        self.assertEqual(country.count(), 1)
-        self.assertFalse(country.locator('[data-country-visit="US"]').is_checked())
-        self.assertIn('Not visited', country.inner_text())
+        self.assertEqual(country.count(), 0)
+        self.assertEqual(self.errors, [])
+
+    def test_region_expansion_is_independent_and_resets_on_view_or_continent_change(self):
+        self.open_panels()
+        panel = self.page.locator("beenthere-panel").first
+        self.page.evaluate("""
+            const card=renderer(0);
+            snapshot.travellers.alice.countries=['US-CA','GB-ENG'];
+            snapshot.map_settings.subdivision_countries=['GB','US'];
+            card.data=JSON.parse(JSON.stringify(snapshot));
+            card.render();
+        """)
+        for country in ("GB", "US"):
+            self.assertEqual(
+                panel.locator(f'[data-country-item="{country}"] .region-link').get_attribute("aria-expanded"),
+                "false",
+            )
+        panel.get_by_role('button', name='Expand visited regions in United Kingdom').click()
+        panel.get_by_role('button', name='Expand visited regions in United States').click()
+        for country in ("GB", "US"):
+            self.assertEqual(
+                panel.locator(f'[data-country-item="{country}"] .region-link').get_attribute("aria-expanded"),
+                "true",
+            )
+        self.page.locator("beenthere-panel").locator("#view").select_option("g:family")
+        self.page.wait_for_function(
+            "renderer(0).selection==='g:family' && renderer(0).expandedCountries.size===0"
+        )
+        for country in ("GB", "US"):
+            self.assertEqual(
+                panel.locator(f'[data-country-item="{country}"] .region-link').get_attribute("aria-expanded"),
+                "false",
+            )
+        for country in ("GB", "US"):
+            panel.get_by_role('button', name=f'Expand visited regions in {"United Kingdom" if country == "GB" else "United States"}').click()
+        panel.locator("#continent").select_option("Europe")
+        for country in ("GB", "US"):
+            self.assertEqual(
+                panel.locator(f'[data-country-item="{country}"] .region-link').get_attribute("aria-expanded"),
+                "false",
+            )
+        self.assertEqual(self.page.evaluate("JSON.stringify(snapshot.travellers.alice.countries)"), '["US-CA","GB-ENG"]')
         self.assertEqual(self.errors, [])

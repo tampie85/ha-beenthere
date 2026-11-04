@@ -16,12 +16,12 @@ selections.
 The backend has a shared geographic catalogue in `geography.json` and a
 version-2 storage model. Global map-detail controls are available in the
 administrator Settings panel. When subdivision detail is enabled, region
-boundaries appear on the main map and the country list shows the country-level
-visit control and its individual region controls. Only explicitly visited
-regions are filled; a country-level visit does not fill any region. Administrators
-viewing one traveller can change country and region visits independently.
-Keyboard users can focus map boundaries and press Enter or Space. Clicking a
-map area or a list entry highlights the corresponding area in both views.
+boundaries appear on the main map and the visited-country sidebar can expand a
+country to show only its visited regions. Only explicitly visited regions are
+filled; a country-level visit does not fill any region. Administrators viewing
+one traveller can change country and region visits independently through the
+map. Keyboard users can focus map boundaries and press Enter or Space. Clicking
+a map area or sidebar entry highlights the corresponding area in both views.
 
 Group and Everyone views show the **union** of explicit visits across their
 selected members, not an intersection. All group views are read-only, including
@@ -40,16 +40,20 @@ explicit visit or any region visit. The region list and `visited_subdivisions`
 remain exact and are unaffected by country-level visits. Unknown historical
 IDs are retained but never used to infer parent visits.
 
-The main traveller/group selector and continent filter control the map.
-Country-level visits can be managed separately from region visits in the
-country list or country search. Removing an explicit country visit leaves
-region visits untouched. If regions are hidden and a country's visited state
-comes only from those regions, the UI explains that subdivision detail must be
-enabled to remove them. Visit controls are disabled during a pending write; a
-failed write leaves the published visit state unchanged, shows an error and
-permits retry. Changes synchronize across open panels. Disabling a country's
-detail setting hides regional boundaries and entries without deleting history
-or losing derived country highlights.
+The main traveller/group selector and continent filter control the map. The
+sidebar lists unique visited countries alphabetically, including countries
+visited through regions, and shows the count. Selecting a country only highlights
+it on the map. Administrators can remove an explicit country-only visit from
+the sidebar after confirmation; this does not remove any regional history.
+The selectors and heading remain visible while only the country list scrolls;
+visited-region entries start collapsed and can be expanded independently.
+Expanded entries are read-only and region visits are managed through the map.
+A country remains visible when its visits come only from regions, including
+while regional detail is disabled. Visit controls
+are disabled during a pending write; a failed write leaves the published visit
+state unchanged, shows an error and permits retry. Changes synchronize across
+open panels. Disabling a country's detail setting hides regional boundaries and
+entries without deleting history or losing derived country highlights.
 
 The catalogue separates countries/territories from their subdivisions. It covers
 all 249 ISO 3166-1 alpha-2 identifiers and retains the existing map's `XK` identifier

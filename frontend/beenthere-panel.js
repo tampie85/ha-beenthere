@@ -16,6 +16,7 @@ class VisitedCountriesPanel extends HTMLElement {
         beenthere-card{display:block}
         beenthere-card ha-card{display:block;border:0;border-radius:0;box-shadow:none;background:transparent}
         beenthere-card .vc{border-radius:0;min-height:calc(100dvh - var(--header-height,56px));box-sizing:border-box}
+        beenthere-card .settings-view{min-height:0}
         @media(width < 600px){
           header{display:grid;grid-template-columns:44px minmax(0,1fr) 44px;gap:8px;height:56px;min-height:56px;padding:6px 16px}
           ha-menu-button{grid-row:1;grid-column:1;display:flex;align-items:center;justify-content:center;width:44px;min-height:44px;--mdc-icon-button-size:44px}

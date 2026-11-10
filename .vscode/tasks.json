@@ -1,0 +1,144 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Verify contextual country details",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-m",
+				"unittest",
+				"discover",
+				"-s",
+				"tests",
+				"-p",
+				"test_frontend_browser.py",
+				"-k",
+				"country_details_are_contextual",
+				"-v"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Verify current country details implementation",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-m",
+				"unittest",
+				"discover",
+				"-s",
+				"tests",
+				"-p",
+				"test_frontend_browser.py",
+				"-k",
+				"country_details_are_contextual",
+				"-v"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Verify contextual details regression",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-m",
+				"unittest",
+				"discover",
+				"-s",
+				"tests",
+				"-p",
+				"test_frontend_browser.py",
+				"-k",
+				"country_details_are_contextual",
+				"-v"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Verify country details and adjacent map behavior",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-m",
+				"unittest",
+				"discover",
+				"-s",
+				"tests",
+				"-p",
+				"test_frontend_browser.py",
+				"-k",
+				"country_details",
+				"-k",
+				"regional_map_and_controls",
+				"-k",
+				"header",
+				"-k",
+				"group_union",
+				"-v"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Verify group-region expansion in isolation",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-m",
+				"unittest",
+				"discover",
+				"-s",
+				"tests",
+				"-p",
+				"test_frontend_browser.py",
+				"-k",
+				"group_union",
+				"-v"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Verify Batch 1 frontend layout",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-m",
+				"unittest",
+				"discover",
+				"-s",
+				"tests",
+				"-p",
+				"test_frontend*.py",
+				"-v"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Compare existing frontend failures before Batch 1 CSS",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-c",
+				"import sys, unittest; from pathlib import Path; sys.path.insert(0, 'tests'); import test_frontend_browser as tests\noriginal_read = Path.read_text\ndef baseline_read(path, *args, **kwargs):\n    source = original_read(path, *args, **kwargs)\n    if path.name == 'beenthere-card.js':\n        source = source.replace('column-gap:16px;row-gap:8px;margin-top:8px;align-items:stretch', 'gap:16px;margin-top:14px;align-items:stretch')\n        source = source.replace('.search-row{max-width:420px;margin:0}', '.search-row{max-width:420px;margin-bottom:12px}')\n        source = source.replace('min-width:0;padding:8px 0}.search-result img', 'min-width:0;padding:8px 12px;border:1px solid #31516a;border-radius:8px;background:#112b3f}.search-result img')\n        source = source.replace('.region-panel .visited-country-section{border:0;border-radius:0;background:transparent;padding:0}', '')\n    return source\nPath.read_text = baseline_read\nnames = ['test_failed_region_save_restores_control_and_can_retry', 'test_group_union_and_region_controls_are_read_only', 'test_hidden_region_visits_cannot_be_cleared_from_country_map', 'test_region_expansion_is_independent_and_resets_on_view_or_continent_change', 'test_sidebar_removes_only_explicit_country_visit_with_confirmation', 'test_sidebar_selection_focuses_country_and_region_without_mutation', 'test_state_click_keeps_focus_and_scroll_on_map', 'test_visited_country_expands_only_visited_regions']\nsuite = unittest.TestSuite(tests.PanelBrowserTests(name) for name in names)\nresult = unittest.TextTestRunner(verbosity=2).run(suite)\nsys.exit(not result.wasSuccessful())"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Verify pre-batch CSS failure baseline",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"C:\\Users\\tamar\\AppData\\Local\\Temp\\beenthere-batch1-baseline.py"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		}
+	]
+}

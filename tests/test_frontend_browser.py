@@ -444,21 +444,31 @@ class PanelBrowserTests(unittest.TestCase):
         ), 0)
         self.assertEqual(self.errors, [])
 
-    def test_country_click_toggles_visit_for_selected_traveller(self):
+    def test_country_selection_requires_an_explicit_visit_action(self):
         self.open_panels()
         panel = self.page.locator("beenthere-panel").first
         panel.locator('#view').select_option('t:alice')
         panel.locator('#continent').select_option('Europe')
         france = panel.locator('.country[aria-label="France"]')
+        before = self.page.evaluate("JSON.stringify(snapshot.travellers)")
+        france.click()
+        self.page.wait_for_function("renderer(0).querySelector('.search-result-name')?.textContent==='France'")
+        self.assertEqual(self.page.evaluate("JSON.stringify(snapshot.travellers)"), before)
+        self.assertEqual(self.page.evaluate("wsMessages.filter(message=>message.type==='beenthere/change').length"), 0)
         messages = []
         self.page.once("dialog", lambda dialog: (messages.append(dialog.message), dialog.accept()))
-        france.click()
+        panel.get_by_role('button', name='Remove country visit', exact=True).click()
         self.page.wait_for_function("!renderer(0)._pendingChanges && !snapshot.travellers.alice.countries.includes('FR')")
+        self.page.wait_for_function("renderer(0).querySelector('.country[aria-label=\"France\"]')?.getAttribute('aria-pressed')==='false'")
         self.assertIn("Regional visits, if any, will be preserved.", messages[0])
         self.assertNotIn("active", france.get_attribute("class"))
         france.focus()
         france.press("Enter")
+        self.page.wait_for_function("renderer(0).querySelector('#toggle-search-result')?.textContent==='Add country visit'")
+        self.assertNotIn('FR', self.page.evaluate('snapshot.travellers.alice.countries'))
+        panel.get_by_role('button', name='Add country visit', exact=True).click()
         self.page.wait_for_function("!renderer(0)._pendingChanges && snapshot.travellers.alice.countries.includes('FR')")
+        self.page.wait_for_function("renderer(0).querySelector('.country[aria-label=\"France\"]')?.getAttribute('aria-pressed')==='true'")
         self.assertIn("active", france.get_attribute("class"))
         self.assertEqual(self.page.evaluate("renderer(0).selection"), "t:alice")
         self.assertEqual(self.errors, [])
@@ -597,6 +607,54 @@ class PanelBrowserTests(unittest.TestCase):
         self.page.wait_for_function("!renderer(0)._pendingChanges && snapshot.travellers.alice.countries.includes('US-FL')")
         self.assertNotIn("US-AK", self.page.evaluate("snapshot.travellers.alice.countries"))
         self.assertEqual(self.page.evaluate("wsMessages.filter(message=>message.action==='set_visit').length"), 1)
+        self.assertEqual(self.errors, [])
+
+    def test_country_details_are_contextual_without_displacing_the_map(self):
+        self.open_panels()
+        panel = self.page.locator("beenthere-panel")
+        panel.locator("#view").select_option("t:alice")
+        self.page.wait_for_function("renderer(0).querySelector('#view').value==='t:alice'")
+        for width in (1440, 320, 375, 430):
+            with self.subTest(width=width):
+                self.page.set_viewport_size({"width": width, "height": 1000})
+                self.page.evaluate("renderer(0).searchResult=null; renderer(0).render()")
+                self.assertEqual(panel.locator(".search-result").count(), 0)
+                search = panel.locator(".search-row").bounding_box()
+                self.assertLessEqual(search["height"], 44)
+                before = panel.locator(".map").bounding_box()
+                panel.locator("#search").fill("France")
+                panel.get_by_role("button", name="Find", exact=True).click()
+                self.page.wait_for_function("renderer(0).querySelector('.search-result-name')?.textContent==='France'")
+                details = panel.locator(".search-result")
+                self.assertEqual(details.locator(".search-result-name").inner_text(), "France")
+                after = panel.locator(".map").bounding_box()
+                self.assertEqual(after, before)
+                box = details.bounding_box()
+                self.assertGreaterEqual(box["y"], after["y"] + after["height"])
+                self.assertGreaterEqual(box["x"], 0)
+                self.assertLessEqual(box["x"] + box["width"], width)
+                self.assertLessEqual(box["height"], 110)
+                self.assertTrue(self.page.evaluate("document.documentElement.scrollWidth<=innerWidth"))
+                self.page.screenshot(path=str(Path(tempfile.gettempdir()) / f"beenthere-country-details-{width}.png"), full_page=True)
+        self.page.once("dialog", lambda dialog: dialog.accept())
+        panel.get_by_role("button", name="Remove country visit", exact=True).click()
+        self.page.wait_for_function("!renderer(0)._pendingChanges && !snapshot.travellers.alice.countries.includes('FR')")
+        panel.get_by_role("button", name="Add country visit", exact=True).click()
+        self.page.wait_for_function("!renderer(0)._pendingChanges && snapshot.travellers.alice.countries.includes('FR')")
+        panel.locator("#view").select_option("g:family")
+        self.page.wait_for_function("renderer(0).querySelector('#view').value==='g:family'")
+        panel.locator('.country[aria-label="Australia"]').dispatch_event("click")
+        self.page.wait_for_function("renderer(0).querySelector('.search-result-name')?.textContent==='Australia'")
+        self.assertEqual(panel.locator(".search-result-name").inner_text(), "Australia")
+        self.assertEqual(panel.locator("#toggle-search-result").count(), 0)
+        panel.locator('[data-location-select="FR"]').click()
+        self.page.wait_for_function("renderer(0).querySelector('.search-result-name')?.textContent==='France'")
+        self.assertEqual(panel.locator(".search-result-name").inner_text(), "France")
+        panel.locator("#search").fill("No such country")
+        panel.get_by_role("button", name="Find", exact=True).click()
+        self.page.wait_for_function("renderer(0).searchResult===null && !renderer(0).querySelector('.search-result')")
+        self.assertEqual(panel.locator(".search-result").count(), 0)
+        self.assertIn("Country not found", panel.locator("#country-search-status").inner_text())
         self.assertEqual(self.errors, [])
 
     def test_regional_map_and_controls_fit_mobile_layout(self):
@@ -793,6 +851,22 @@ class PanelBrowserTests(unittest.TestCase):
                     self.assertLess(travellers["y"], groups["y"])
                     self.assertLess(groups["y"], regional["y"])
                 self.page.screenshot(path=str(Path(tempfile.gettempdir()) / f"beenthere-settings-{width}.png"), full_page=True)
+        self.assertEqual(self.errors, [])
+
+    def test_settings_scroll_only_when_content_exceeds_the_viewport(self):
+        self.open_panels()
+        panel = self.show_settings()
+        for height in (1000, 600):
+            with self.subTest(height=height):
+                self.page.set_viewport_size({"width": 1440, "height": height})
+                self.assertTrue(self.page.evaluate(
+                    "document.documentElement.scrollHeight<=innerHeight"))
+                self.assertTrue(panel.evaluate(
+                    "element=>element.scrollHeight<=element.clientHeight"))
+        self.page.set_viewport_size({"width": 320, "height": 480})
+        last_option = panel.locator(".map-detail-option").last
+        last_option.scroll_into_view_if_needed()
+        self.assertLessEqual(last_option.bounding_box()["y"] + last_option.bounding_box()["height"], 480)
         self.assertEqual(self.errors, [])
 
     def test_settings_empty_states_are_compact_and_clear(self):

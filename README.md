@@ -3,10 +3,21 @@
 BeenThere adds a dedicated **BeenThere** sidebar page to Home
 Assistant. Open it to manage travellers and groups and track visited countries
 on the interactive map. The page uses the integration's existing stored data.
+Administrators can switch between the map and a dedicated Settings view from
+the header; returning to the map preserves the current traveller, continent and
+selection. On desktop, Settings uses 30% / 30% / 40% columns for Travellers,
+Groups and Regional detail, respectively, excluding gaps. Tablet and mobile
+layouts retain two columns and a single column, respectively.
+Below 600px, the header puts the menu and branding above page navigation and
+shortens the subtitle to "Track the countries you've visited." In Settings, the
+second row pairs the page heading with Back to map; desktop keeps the full
+subtitle and its existing header layout.
+Each traveller has their own map and visit history. Groups combine travellers'
+existing visits on a shared, read-only map, without separate tracking.
 
 The world map shows country and territory outlines. Subdivision detail can be
 enabled independently for the United Kingdom, United States, Australia, Canada,
-and Germany. Their boundaries and region records are bundled locally.
+and Germany in Settings. Their boundaries and region records are bundled locally.
 Territories with their own country code remain separate from their
 administering country: France and French Guiana, for example, are independent
 selections.
@@ -15,7 +26,7 @@ selections.
 
 The backend has a shared geographic catalogue in `geography.json` and a
 version-2 storage model. Global map-detail controls are available in the
-administrator Settings panel. When subdivision detail is enabled, region
+administrator Settings view. When subdivision detail is enabled, region
 boundaries appear on the main map and the visited-country sidebar can expand a
 country to show only its visited regions. Only explicitly visited regions are
 filled; a country-level visit does not fill any region. Administrators viewing
@@ -45,7 +56,9 @@ sidebar lists unique visited countries alphabetically, including countries
 visited through regions, and shows the count. Selecting a country only highlights
 it on the map. Administrators can remove an explicit country-only visit from
 the sidebar after confirmation; this does not remove any regional history.
-The selectors and heading remain visible while only the country list scrolls;
+The three sidebar headings share the same typography. The visited-country
+heading and divider stay inside the rounded card, above the independently
+scrolling list. The selectors and heading remain visible while only the country list scrolls;
 visited-region entries start collapsed and can be expanded independently.
 Expanded entries are read-only and region visits are managed through the map.
 A country remains visible when its visits come only from regions, including
@@ -77,7 +90,7 @@ shows each subdivision's exact, non-inferred state.
 
 Global settings live separately under `map_settings.subdivision_countries`, with
 `["GB"]` as the default. Administrators can enable or disable the five supported
-countries from the Settings panel; the preference is shared by all travellers and
+countries from the Settings view; the preference is shared by all travellers and
 groups and does not change saved visits. Geographic metadata is not copied into
 traveller history or map settings. Changes are synchronized to other open panels
 through the existing `beenthere_updated` event.

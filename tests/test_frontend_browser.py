@@ -77,6 +77,20 @@ class PanelBrowserTests(unittest.TestCase):
                                     const countries=new Set(traveller.countries);
                                     if(message.visited)countries.add(message.location);else countries.delete(message.location);
                                     traveller.countries=[...countries].sort();
+                                } else if(message.action==='add_traveller'){
+                                    snapshot.travellers.bob={name:message.name,countries:[]};
+                                } else if(message.action==='rename_traveller'){
+                                    snapshot.travellers[message.target_id].name=message.name;
+                                } else if(message.action==='delete_traveller'){
+                                    delete snapshot.travellers[message.target_id];
+                                    Object.values(snapshot.groups).forEach(group=>{
+                                        group.members=group.members.filter(member=>member!==message.target_id);
+                                    });
+                                } else if(message.action==='add_group'||message.action==='update_group'){
+                                    const id=message.target_id||'trip';
+                                    snapshot.groups[id]={name:message.name,members:message.members};
+                                } else if(message.action==='delete_group'){
+                                    delete snapshot.groups[message.target_id];
                                 } else {
                                     throw new Error('Unexpected mutation');
                                 }
@@ -143,8 +157,8 @@ class PanelBrowserTests(unittest.TestCase):
         self.open_panels()
         panel = self.show_settings()
         self.assertEqual(panel.locator("#vc-settings").get_by_role("checkbox").count(), 5)
-        self.assertTrue(panel.get_by_role("checkbox", name="Subdivision tracking for United Kingdom", exact=True).is_checked())
-        united_states = panel.get_by_role("checkbox", name="Subdivision tracking for United States", exact=True)
+        self.assertTrue(panel.get_by_role("checkbox", name="Show regional detail for United Kingdom", exact=True).is_checked())
+        united_states = panel.get_by_role("checkbox", name="Show regional detail for United States", exact=True)
         self.assertFalse(united_states.is_checked())
         united_states.check()
         self.wait_for_detail(0, True)
@@ -332,11 +346,37 @@ class PanelBrowserTests(unittest.TestCase):
         self.assertEqual(style["borderStyle"], "solid")
         self.assertFalse(sidebar.locator("#continent").evaluate("element=>!!element.closest('.visited-country-section')"))
         self.assertFalse(sidebar.locator("#view").evaluate("element=>!!element.closest('.visited-country-section')"))
+        headings = sidebar.locator(".sidebar-heading")
+        self.assertEqual(headings.count(), 3)
+        typography = headings.evaluate_all("""elements=>elements.map(element=>{
+            const style=getComputedStyle(element);
+            return [style.fontSize,style.fontWeight,style.color,style.lineHeight];
+        })""")
+        self.assertEqual(typography, [typography[0]] * 3)
+        self.assertEqual(typography[0][:3], ["13px", "400", "rgb(182, 232, 241)"])
+        self.assertEqual(country_card.locator(".country-count").evaluate("""element=>{
+            const style=getComputedStyle(element);
+            return [style.fontSize,style.fontWeight,style.color,style.lineHeight];
+        }"""), typography[0])
+        spacing = headings.evaluate_all("""elements=>elements.map(element=>{
+            const content=element.tagName==='LABEL'
+                ?element.nextElementSibling:element.parentElement.querySelector('.visited-country-list');
+            return content.getBoundingClientRect().top-element.getBoundingClientRect().bottom;
+        })""")
+        self.assertEqual(spacing, [20, 20, 20])
+        heading = country_card.locator(".sidebar-heading")
+        divider = country_card.locator(".visited-country-divider")
+        self.assertEqual(country_list.locator(".sidebar-heading, .visited-country-divider").count(), 0)
+        self.assertEqual(panel.locator(".visited-subdivision-list").count(), 0)
         panel.get_by_role('button', name='Expand visited regions in United Kingdom').click()
         panel.get_by_role('button', name='Expand visited regions in United States').click()
         before = self.page.evaluate("scrollY")
+        heading_before = heading.bounding_box()
+        divider_before = divider.bounding_box()
         country_list.evaluate("element=>element.scrollTop=element.scrollHeight")
         self.assertGreater(country_list.evaluate("element=>element.scrollTop"), 0)
+        self.assertEqual(heading.bounding_box(), heading_before)
+        self.assertEqual(divider.bounding_box(), divider_before)
         self.assertEqual(sidebar.evaluate("element=>element.scrollTop"), 0)
         self.assertEqual(self.page.evaluate("scrollY"), before)
         for width, height in ((1440, 700), (1440, 900), (390, 700)):
@@ -349,6 +389,11 @@ class PanelBrowserTests(unittest.TestCase):
             map_bounds = panel.locator(".map").bounding_box()
             card_bounds = country_card.bounding_box()
             sidebar_bounds = sidebar.bounding_box()
+            list_bounds = country_list.bounding_box()
+            divider_bounds = divider.bounding_box()
+            self.assertGreater(list_bounds["y"], divider_bounds["y"] + divider_bounds["height"])
+            self.assertAlmostEqual(list_bounds["y"] + list_bounds["height"],
+                                   card_bounds["y"] + card_bounds["height"] - 13)
             self.assertGreater(card_bounds["y"], map_bounds["y"])
             self.assertAlmostEqual(card_bounds["y"] + card_bounds["height"], map_bounds["y"] + map_bounds["height"])
             self.assertAlmostEqual(sidebar_bounds["y"] + sidebar_bounds["height"], map_bounds["y"] + map_bounds["height"])
@@ -509,7 +554,7 @@ class PanelBrowserTests(unittest.TestCase):
         second = self.show_settings(1)
         self.page.evaluate("callbacks.forEach(handler=>handler({}));")
         self.wait_for_detail(1, True)
-        second.get_by_role("checkbox", name="Subdivision tracking for United States", exact=True).uncheck()
+        second.get_by_role("checkbox", name="Show regional detail for United States", exact=True).uncheck()
         self.wait_for_detail(0, False)
         self.assertEqual(panel.locator('[data-location="US-CA"]').count(), 0)
         self.assertEqual(self.page.evaluate("snapshot.travellers.alice.countries"), ["US-CA", "FR"])
@@ -557,7 +602,7 @@ class PanelBrowserTests(unittest.TestCase):
     def test_regional_map_and_controls_fit_mobile_layout(self):
         self.open_panels()
         panel = self.open_us_map()
-        for width in (1440, 390, 320):
+        for width in (1440, 1051, 1050, 621, 620, 390, 320):
             with self.subTest(width=width):
                 self.page.set_viewport_size({"width": width, "height": 1000})
                 self.assertTrue(self.page.evaluate("document.documentElement.scrollWidth<=window.innerWidth"))
@@ -570,9 +615,9 @@ class PanelBrowserTests(unittest.TestCase):
         self.page.evaluate("renderer(0).selection='t:alice'; renderer(1).selection='g:family'; renderer(1).continent='Europe'; renderer(0).render(); renderer(1).render();")
         first = self.show_settings(0)
         second = self.show_settings(1)
-        first.get_by_role("checkbox", name="Subdivision tracking for United States", exact=True).check()
+        first.get_by_role("checkbox", name="Show regional detail for United States", exact=True).check()
         self.wait_for_detail(1, True)
-        self.assertTrue(second.get_by_role("checkbox", name="Subdivision tracking for United States", exact=True).is_checked())
+        self.assertTrue(second.get_by_role("checkbox", name="Show regional detail for United States", exact=True).is_checked())
         self.assertEqual(self.page.evaluate("renderer(0).selection"), "t:alice")
         self.assertEqual(self.page.evaluate("renderer(1).selection"), "g:family")
         self.assertEqual(self.page.evaluate("renderer(1).continent"), "Europe")
@@ -582,7 +627,7 @@ class PanelBrowserTests(unittest.TestCase):
         self.open_panels()
         panel = self.show_settings()
         self.page.evaluate("failNextSave=true;")
-        checkbox = panel.get_by_role("checkbox", name="Subdivision tracking for United States", exact=True)
+        checkbox = panel.get_by_role("checkbox", name="Show regional detail for United States", exact=True)
         checkbox.focus()
         checkbox.press("Space")
         self.page.wait_for_function("renderer(0).error==='Storage unavailable' && !renderer(0)._pendingChanges")
@@ -598,6 +643,127 @@ class PanelBrowserTests(unittest.TestCase):
         self.assertEqual(panel.locator("#vc-settings").get_by_role("checkbox").count(), 0)
         self.assertEqual(self.errors, [])
 
+    def test_mobile_header_centres_branding_between_icon_controls(self):
+        self.page.add_init_script("""
+            customElements.define('ha-menu-button', class extends HTMLElement {
+                constructor() {
+                    super();
+                    this.attachShadow({mode:'open'}).innerHTML=`
+                        <style>button{width:var(--mdc-icon-button-size,48px);
+                            height:var(--mdc-icon-button-size,48px);padding:0}</style>
+                        <button aria-label="Toggle sidebar">Menu</button>`;
+                    this.shadowRoot.querySelector('button').onclick=()=>{
+                        this.dispatchEvent(new CustomEvent('hass-toggle-menu',
+                            {bubbles:true,composed:true}));
+                    };
+                }
+            });
+            window.sidebarToggleCount=0;
+            document.addEventListener('hass-toggle-menu',()=>sidebarToggleCount++);
+        """)
+        self.open_panels()
+        panel = self.page.locator("beenthere-panel")
+        header = panel.locator("header")
+        self.page.evaluate("""
+            const panel=document.querySelector('beenthere-panel');
+            panel.narrow=true;
+            renderer(0).selection='t:alice';
+            renderer(0).continent='Europe';
+        """)
+        for width in (320, 375, 430, 599):
+            with self.subTest(width=width):
+                self.page.set_viewport_size({"width": width, "height": 1000})
+                for settings_open in (False, True):
+                    with self.subTest(settings_open=settings_open):
+                        self.assertEqual(header.locator("h1").inner_text(), "BeenThere")
+                        self.assertEqual(header.bounding_box()["height"], 56)
+                        self.assertFalse(header.locator(".subtitle").is_visible())
+                        self.assertFalse(header.locator(".settings-toggle span").is_visible())
+                        boxes = {
+                            name: header.locator(selector).bounding_box()
+                            for name, selector in (
+                                ("menu", "ha-menu-button"), ("brand", ".title-block"),
+                                ("title", "h1"),
+                                ("navigation", ".settings-toggle"),
+                            )
+                        }
+                        menu, brand, navigation = (boxes[key] for key in ("menu", "brand", "navigation"))
+                        self.assertEqual(menu["x"], 16)
+                        self.assertGreaterEqual(brand["x"], menu["x"] + menu["width"] + 8)
+                        self.assertLessEqual(brand["x"] + brand["width"] + 8, navigation["x"])
+                        self.assertEqual(menu["width"], navigation["width"])
+                        self.assertAlmostEqual(boxes["title"]["x"] + boxes["title"]["width"] / 2,
+                                               width / 2)
+                        self.assertAlmostEqual(navigation["x"] + navigation["width"], width - 16)
+                        for box in boxes.values():
+                            self.assertGreaterEqual(box["x"], 0)
+                            self.assertLessEqual(box["x"] + box["width"], width)
+                            self.assertAlmostEqual(box["y"] + box["height"] / 2, 28)
+                        self.assertTrue(header.locator("h1").evaluate(
+                            "element=>element.scrollWidth<=element.clientWidth"))
+                        for target in (header.get_by_role("button", name="Toggle sidebar"),
+                                       header.locator(".settings-toggle")):
+                            box = target.bounding_box()
+                            self.assertGreaterEqual(box["width"], 44)
+                            self.assertGreaterEqual(box["height"], 44)
+                        self.assertTrue(panel.evaluate(
+                            "element=>element.scrollWidth<=element.clientWidth"))
+                        self.assertTrue(self.page.evaluate(
+                            "document.documentElement.scrollWidth<=innerWidth"))
+                        heading = header.get_by_role("heading", name="Settings", exact=True)
+                        self.assertFalse(heading.is_visible())
+                        self.assertEqual(header.locator("ha-icon").get_attribute("icon"),
+                                         "mdi:arrow-left" if settings_open else "mdi:cog")
+                        if settings_open:
+                            self.assertTrue(panel.locator("#vc-settings-title").is_visible())
+                        label = "Back to map" if settings_open else "Settings"
+                        header.get_by_role("button", name=label, exact=True).click()
+                        self.assertEqual(self.page.evaluate("!!renderer(0).settingsOpen"), not settings_open)
+                        self.assertEqual(header.locator(".settings-toggle").get_attribute("aria-expanded"),
+                                         str(not settings_open).lower())
+                header.get_by_role("button", name="Toggle sidebar").click()
+        self.assertEqual(self.page.evaluate("sidebarToggleCount"), 4)
+        self.assertTrue(panel.locator("ha-menu-button").evaluate(
+            "element=>element.narrow && element.hass===document.querySelector('beenthere-panel').hass"))
+        self.assertEqual(self.page.evaluate("renderer(0).selection"), "t:alice")
+        self.assertEqual(self.page.evaluate("renderer(0).continent"), "Europe")
+        self.assertEqual(self.errors, [])
+
+    def test_desktop_header_keeps_full_subtitle_and_top_right_navigation(self):
+        self.open_panels()
+        panel = self.page.locator("beenthere-panel")
+        header = panel.locator("header")
+        for width in (600, 1024, 1440):
+            with self.subTest(width=width):
+                self.page.set_viewport_size({"width": width, "height": 1000})
+                for settings_open in (False, True):
+                    self.assertEqual(header.evaluate("element=>getComputedStyle(element).display"), "flex")
+                    self.assertEqual(header.bounding_box()["height"], 56)
+                    self.assertEqual(header.locator(".subtitle").inner_text(),
+                                     "Track the countries you've visited, individually or together.")
+                    self.assertFalse(header.locator(".page-title").is_visible())
+                    navigation = header.locator(".settings-toggle").bounding_box()
+                    self.assertEqual(navigation["height"], 40)
+                    self.assertAlmostEqual(navigation["x"] + navigation["width"], width - 16)
+                    self.assertAlmostEqual(navigation["y"] + navigation["height"] / 2, 28)
+                    if settings_open:
+                        self.assertTrue(panel.locator("#vc-settings-title").is_visible())
+                    label = "Back to map" if settings_open else "Settings"
+                    header.get_by_role("button", name=label, exact=True).click()
+        self.assertEqual(self.errors, [])
+
+    def test_mobile_header_hides_navigation_for_non_admins(self):
+        self.page.set_viewport_size({"width": 320, "height": 1000})
+        self.open_panels(admin=False)
+        header = self.page.locator("beenthere-panel header")
+        self.assertFalse(header.locator(".settings-toggle").is_visible())
+        self.assertFalse(header.locator(".page-title").is_visible())
+        self.assertFalse(header.locator(".subtitle").is_visible())
+        self.assertEqual(header.bounding_box()["height"], 56)
+        title = header.locator("h1").bounding_box()
+        self.assertAlmostEqual(title["x"] + title["width"] / 2, 160)
+        self.assertEqual(self.errors, [])
+
     def test_settings_fit_desktop_and_mobile(self):
         self.open_panels()
         self.show_settings()
@@ -606,7 +772,140 @@ class PanelBrowserTests(unittest.TestCase):
                 self.page.set_viewport_size({"width": width, "height": 1000})
                 self.assertTrue(self.page.evaluate("document.documentElement.scrollWidth<=window.innerWidth"))
                 self.assertTrue(self.page.locator(".map-detail-option").evaluate_all("labels=>labels.every(label=>label.querySelector('span').getBoundingClientRect().right<=label.querySelector('input').getBoundingClientRect().left)"))
+                cards = self.page.locator(".settings-grid > .settings-card").evaluate_all(
+                    "cards=>cards.map(card=>{const {x,y,width}=card.getBoundingClientRect();return {x,y,width};})"
+                )
+                travellers, groups, regional = cards
+                if width > 1050:
+                    total_width = sum(card["width"] for card in cards)
+                    for card, share in zip(cards, (0.3, 0.3, 0.4)):
+                        self.assertAlmostEqual(card["width"], total_width * share, delta=1)
+                        self.assertEqual(card["y"], travellers["y"])
+                elif width > 620:
+                    self.assertAlmostEqual(travellers["width"], groups["width"], delta=1)
+                    self.assertEqual(travellers["y"], groups["y"])
+                    self.assertGreater(regional["y"], travellers["y"])
+                    self.assertAlmostEqual(regional["width"], travellers["width"] + groups["width"] + 16, delta=1)
+                else:
+                    for card in cards:
+                        self.assertEqual(card["x"], travellers["x"])
+                        self.assertAlmostEqual(card["width"], travellers["width"], delta=1)
+                    self.assertLess(travellers["y"], groups["y"])
+                    self.assertLess(groups["y"], regional["y"])
                 self.page.screenshot(path=str(Path(tempfile.gettempdir()) / f"beenthere-settings-{width}.png"), full_page=True)
+        self.assertEqual(self.errors, [])
+
+    def test_settings_empty_states_are_compact_and_clear(self):
+        self.open_panels()
+        self.show_settings()
+        panel = self.page.locator("beenthere-panel").first
+        self.assertEqual(panel.locator(".manager-empty").count(), 0)
+        self.page.evaluate("""
+            renderer(0).data.travellers={};
+            renderer(0).data.groups={};
+            renderer(0).render();
+        """)
+        travellers = panel.locator(".settings-card").nth(0)
+        groups = panel.locator(".settings-card").nth(1)
+        self.assertEqual(travellers.locator(".manager-help").inner_text(),
+                         "Track the countries each person has visited on their own map.")
+        self.assertEqual(groups.locator(".manager-help").inner_text(),
+                         "Combine travellers' existing visits on a shared, read-only map. No separate tracking needed.")
+        self.assertEqual(travellers.locator(".manager-empty").inner_text(),
+                         "No travellers yet. Add your first traveller to get started.")
+        self.assertEqual(groups.locator(".manager-empty").inner_text(),
+                         "No groups yet. Create a group to explore your travels together.")
+        self.assertEqual(groups.locator('.manager-empty ha-icon[aria-hidden="true"]').get_attribute("icon"),
+                         "mdi:account-group-outline")
+        for width in (1440, 1051, 620, 320):
+            with self.subTest(width=width):
+                self.page.set_viewport_size({"width": width, "height": 1000})
+                self.assertTrue(self.page.evaluate("document.documentElement.scrollWidth<=window.innerWidth"))
+                for card, button_name in ((travellers, "Add traveller"), (groups, "Add group")):
+                    self.assertLessEqual(card.locator(".manager-empty").bounding_box()["height"], 90)
+                    self.assertTrue(card.get_by_role("button", name=button_name, exact=True).is_visible())
+        travellers.get_by_role("button", name="Add traveller", exact=True).click()
+        dialog = panel.locator(".settings-dialog")
+        self.assertTrue(dialog.is_visible())
+        dialog.get_by_role("button", name="Cancel", exact=True).click()
+        groups.get_by_role("button", name="Add group", exact=True).click()
+        self.assertTrue(dialog.is_visible())
+        dialog.get_by_role("button", name="Cancel", exact=True).click()
+        self.page.evaluate("""
+            renderer(0).data=JSON.parse(JSON.stringify(snapshot));
+            renderer(0).render();
+        """)
+        self.assertEqual(panel.locator(".manager-empty").count(), 0)
+        self.assertEqual(panel.locator(".manager-list .chip").count(), 2)
+        self.assertEqual(self.errors, [])
+
+    def test_map_settings_switch_preserves_selection_and_delete_requires_confirmation(self):
+        self.open_panels()
+        panel = self.page.locator("beenthere-panel").first
+        self.page.evaluate("""
+            const card=renderer(0);
+            card.selection='g:family';
+            card.continent='North America';
+            card.selectedLocation='US';
+            card.searchResult='US';
+            card.render();
+        """)
+        self.assertTrue(panel.locator("#map-view").is_visible())
+        self.show_settings()
+        self.assertTrue(panel.locator("#vc-settings").is_visible())
+        self.assertFalse(panel.locator("#map-view").is_visible())
+        self.assertEqual(self.page.evaluate(
+            "[renderer(0).selection,renderer(0).continent,renderer(0).selectedLocation].join('|')"
+        ), "g:family|North America|US")
+        panel.get_by_role("checkbox", name="Show regional detail for United States", exact=True).check()
+        self.page.wait_for_function(
+            "renderer(0).data.map_settings.subdivision_countries.includes('US') && !!renderer(0).regionalMaps?.US"
+        )
+        panel.get_by_role("button", name="Back to map", exact=True).click()
+        self.assertTrue(panel.locator("#map-view").is_visible())
+        self.assertEqual(panel.locator("#view").input_value(), "g:family")
+        self.assertEqual(panel.locator("#continent").input_value(), "North America")
+        self.assertGreater(panel.locator('[data-location="US-CA"]').count(), 0)
+
+        self.show_settings()
+        panel.get_by_role("button", name="Delete Alice", exact=True).click()
+        dialog = panel.locator(".settings-dialog")
+        self.assertTrue(dialog.is_visible())
+        self.assertIn("recorded visits will be deleted", dialog.inner_text())
+        self.assertIn("removed from any groups", dialog.inner_text())
+        self.assertEqual(self.page.evaluate(
+            "wsMessages.filter(message=>message.action==='delete_traveller').length"
+        ), 0)
+        dialog.get_by_role("button", name="Cancel", exact=True).click()
+        self.assertEqual(self.page.evaluate(
+            "wsMessages.filter(message=>message.action==='delete_traveller').length"
+        ), 0)
+        self.assertIn("alice", self.page.evaluate("Object.keys(snapshot.travellers)"))
+        self.assertEqual(self.errors, [])
+
+    def test_traveller_and_group_forms_validate_names_and_manage_members(self):
+        self.open_panels()
+        panel = self.show_settings()
+        panel.get_by_role("button", name="Add traveller", exact=True).click()
+        dialog = panel.locator(".settings-dialog")
+        dialog.get_by_label("Traveller name", exact=True).fill("Alice")
+        dialog.get_by_role("button", name="Save", exact=True).click()
+        self.assertIn("already exists", dialog.get_by_role("alert").inner_text())
+        self.assertEqual(self.page.evaluate(
+            "wsMessages.filter(message=>message.action==='add_traveller').length"
+        ), 0)
+        dialog.get_by_label("Traveller name", exact=True).fill("Bob")
+        dialog.get_by_role("button", name="Save", exact=True).click()
+        self.page.wait_for_function("snapshot.travellers.bob?.name==='Bob' && !renderer(0)._pendingChanges")
+
+        panel.get_by_role("button", name="Add group", exact=True).click()
+        dialog = panel.locator(".settings-dialog")
+        dialog.get_by_label("Group name", exact=True).fill("Trip")
+        dialog.get_by_label("Alice", exact=True).check()
+        dialog.get_by_label("Bob", exact=True).check()
+        dialog.get_by_role("button", name="Save", exact=True).click()
+        self.page.wait_for_function("snapshot.groups.trip?.members.length===2 && !renderer(0)._pendingChanges")
+        self.assertEqual(set(self.page.evaluate("snapshot.groups.trip.members")), {"alice", "bob"})
         self.assertEqual(self.errors, [])
 
     def test_visited_country_expands_only_visited_regions(self):

@@ -188,7 +188,7 @@ async def async_setup_entry(
         frontend_url_path=PANEL_PATH,
         sidebar_title="BeenThere",
         sidebar_icon="mdi:map-marker-check",
-        module_url=f"{PANEL_URL}?v=11",
+        module_url=f"{PANEL_URL}?v=13",
         embed_iframe=False,
         require_admin=False,
     )

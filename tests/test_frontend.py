@@ -18,6 +18,7 @@ class FrontendTests(unittest.TestCase):
             globalThis.HTMLElement=class {
                 addEventListener() {}
                 removeEventListener() {}
+                querySelector() { return null; }
             };
             globalThis.customElements={get:()=>false,define:()=>{}};
             globalThis.console={error:()=>{}};
@@ -187,6 +188,13 @@ class FrontendTests(unittest.TestCase):
         self.assertEqual(self.context.eval("calls"), 0)
         self.assertEqual(self.context.eval("card.searchResult"), "FR")
 
+    def test_editable_traveller_map_click_selects_without_mutating(self):
+        self.context.eval("card._hass.user.is_admin=true; card.clickCountry(france);")
+        self.drain_jobs()
+        self.assertEqual(self.context.eval("calls"), 0)
+        self.assertEqual(self.context.eval("card.selectedLocation"), "FR")
+        self.assertEqual(self.context.eval("card.searchResult"), "FR")
+
     def test_non_admin_cannot_open_settings_or_group_editor(self):
         self.context.eval("card.toggleSettings(); card.editGroup();")
         self.assertFalse(self.context.eval("!!card.settingsOpen"))
@@ -291,6 +299,21 @@ class FrontendTests(unittest.TestCase):
         self.assertEqual(self.context.eval("card.visitors('US-CA').map(person=>person.name).join(',')"), "Alice")
         self.assertEqual(self.context.eval("card.visitors('US-FL').map(person=>person.name).join(',')"), "Bob")
         self.assertEqual(self.context.eval("card.visitors('US-AK').length"), 0)
+
+    def test_traveller_bubble_initials_and_accessible_names(self):
+        markup = self.context.eval("card.travellerBubble({name:'Taylor Woods'})")
+        self.assertIn('>TW<', markup)
+        self.assertIn('aria-label="Taylor Woods"', markup)
+        self.assertIn('title="Taylor Woods"', markup)
+        self.assertIn('role="button" aria-expanded="false" aria-label="Show full name: Taylor Woods"', markup)
+        self.assertIn('<div class="visitor-popover">Taylor Woods</div>', markup)
+        self.assertEqual(markup, self.context.eval("card.travellerBubble({name:'Taylor Woods'})"))
+        self.assertIn('>A<', self.context.eval("card.travellerBubble({name:'Alice'})"))
+        self.assertIn('>MW<', self.context.eval("card.travellerBubble({name:'  Mary  Jane Watson  '})"))
+        self.assertIn('>\u00c9D<', self.context.eval("card.travellerBubble({name:'\\u00c9lodie Durand'})"))
+        escaped = self.context.eval("card.travellerBubble({name:'Lee <Wood>'})")
+        self.assertIn('aria-label="Lee &lt;Wood&gt;"', escaped)
+        self.assertNotIn('<Wood>', escaped)
 
     def test_country_and_subdivision_statuses_remain_distinct(self):
         self.assertEqual(self.context.eval("card.visitStatus('US')"), "Visited via subdivisions")

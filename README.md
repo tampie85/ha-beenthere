@@ -29,10 +29,15 @@ version-2 storage model. Global map-detail controls are available in the
 administrator Settings view. When subdivision detail is enabled, region
 boundaries appear on the main map and the visited-country sidebar can expand a
 country to show only its visited regions. Only explicitly visited regions are
-filled; a country-level visit does not fill any region. Administrators viewing
-one traveller can change country and region visits independently through the
-map. Keyboard users can focus map boundaries and press Enter or Space. Clicking
-a map area or sidebar entry highlights the corresponding area in both views.
+filled; a country-level visit does not fill any region. Clicking a country or
+sidebar entry selects it without changing visit history. Administrators viewing
+one traveller can use **Mark visited** or **Mark unvisited** directly in the
+selected-country banner, without a confirmation dialog. Unmarking removes only
+the country-level visit and preserves regional visits. Countries with remaining
+regional visits stay visited; those visits can only be removed through the
+regional interface. Region boundaries still toggle individual region
+visits in editable traveller views. Keyboard users can focus map boundaries and
+press Enter or Space.
 
 Group and Everyone views show the **union** of explicit visits across their
 selected members, not an intersection. All group views are read-only, including

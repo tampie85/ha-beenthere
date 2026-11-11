@@ -61,8 +61,9 @@ sidebar lists unique visited countries alphabetically, including countries
 visited through regions, and shows the count. Selecting a country only highlights
 it on the map. Administrators can remove an explicit country-only visit from
 the sidebar after confirmation; this does not remove any regional history.
-The three sidebar headings share the same typography. The visited-country
-heading and divider stay inside the rounded card, above the independently
+The Map Filters card groups the traveller and continent selectors and marks an
+administrator's individual traveller view as editable. The visited-country
+heading and divider stay inside their rounded card, above the independently
 scrolling list. The selectors and heading remain visible while only the country list scrolls;
 visited-region entries start collapsed and can be expanded independently.
 Expanded entries are read-only and region visits are managed through the map.

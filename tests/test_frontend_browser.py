@@ -321,6 +321,46 @@ class PanelBrowserTests(unittest.TestCase):
         self.assertEqual(panel.locator('[data-remove-country]').count(), 0)
         self.assertEqual(self.errors, [])
 
+    def test_view_card_controls_and_editability(self):
+        self.open_panels()
+        panel = self.page.locator('beenthere-panel')
+        card = panel.get_by_role('region', name='Map Filters', exact=True)
+        traveller = card.get_by_role('combobox', name='Travellers / Groups')
+        continent = card.get_by_role('combobox', name='Continent')
+        for control in (traveller, continent):
+            self.assertEqual(control.evaluate("element=>getComputedStyle(element).appearance"), 'none')
+            arrow = control.locator('..').evaluate("""element=>{
+                const style=getComputedStyle(element,'::after');
+                return [style.content,style.right,style.pointerEvents];
+            }""")
+            self.assertEqual(arrow, ['""', '13px', 'none'])
+        self.assertEqual(continent.locator('option:checked').inner_text(), 'All continents')
+        self.assertEqual(card.get_by_text('Editable', exact=True).count(), 0)
+        traveller.select_option('t:alice')
+        card.get_by_text('Editable', exact=True).wait_for(state='visible')
+        for width in (1440, 390, 320):
+            with self.subTest(width=width):
+                self.page.set_viewport_size({'width': width, 'height': 700})
+                bounds = card.bounding_box()
+                for control in (traveller, continent, card.get_by_text('Editable', exact=True)):
+                    box = control.bounding_box()
+                    self.assertGreaterEqual(box['x'], bounds['x'])
+                    self.assertLessEqual(box['x'] + box['width'], bounds['x'] + bounds['width'])
+                self.assertLess(traveller.bounding_box()['y'], continent.bounding_box()['y'])
+                self.assertFalse(self.page.evaluate('document.documentElement.scrollWidth>innerWidth'))
+        continent.select_option('Europe')
+        self.page.wait_for_function("renderer(0).continent==='Europe'")
+        traveller.select_option('g:family')
+        self.page.wait_for_function("renderer(0).selection==='g:family' && !renderer(0).querySelector('.view-editable')")
+        self.assertEqual(self.errors, [])
+
+        self.open_panels(admin=False)
+        panel = self.page.locator('beenthere-panel')
+        panel.get_by_role('combobox', name='Travellers / Groups').select_option('t:alice')
+        self.page.wait_for_function("renderer(0).selection==='t:alice'")
+        self.assertEqual(panel.locator('.view-editable').count(), 0)
+        self.assertEqual(self.errors, [])
+
     def test_many_visited_countries_scroll_inside_sidebar(self):
         self.page.set_viewport_size({"width": 1440, "height": 700})
         self.open_panels()
@@ -346,30 +386,23 @@ class PanelBrowserTests(unittest.TestCase):
         self.assertEqual(style["borderStyle"], "solid")
         self.assertFalse(sidebar.locator("#continent").evaluate("element=>!!element.closest('.visited-country-section')"))
         self.assertFalse(sidebar.locator("#view").evaluate("element=>!!element.closest('.visited-country-section')"))
-        headings = sidebar.locator(".sidebar-heading")
-        self.assertEqual(headings.count(), 3)
-        typography = headings.evaluate_all("""elements=>elements.map(element=>{
+        heading = country_card.locator(".sidebar-heading")
+        typography = heading.evaluate("""element=>{
             const style=getComputedStyle(element);
             return [style.fontSize,style.fontWeight,style.color,style.lineHeight];
-        })""")
-        self.assertEqual(typography, [typography[0]] * 3)
-        self.assertEqual(typography[0][:3], ["13px", "400", "rgb(182, 232, 241)"])
+        }""")
+        self.assertEqual(typography[:3], ["13px", "400", "rgb(182, 232, 241)"])
         self.assertEqual(country_card.locator(".country-count").evaluate("""element=>{
             const style=getComputedStyle(element);
             return [style.fontSize,style.fontWeight,style.color,style.lineHeight];
-        }"""), typography[0])
-        spacing = headings.evaluate_all("""elements=>elements.map(element=>{
-            const content=element.tagName==='LABEL'
-                ?element.nextElementSibling:element.parentElement.querySelector('.visited-country-list');
-            return content.getBoundingClientRect().top-element.getBoundingClientRect().bottom;
-        })""")
-        self.assertEqual(spacing, [20, 20, 20])
-        heading = country_card.locator(".sidebar-heading")
+        }"""), typography)
         divider = country_card.locator(".visited-country-divider")
         self.assertEqual(country_list.locator(".sidebar-heading, .visited-country-divider").count(), 0)
         self.assertEqual(panel.locator(".visited-subdivision-list").count(), 0)
         panel.get_by_role('button', name='Expand visited regions in United Kingdom').click()
+        panel.get_by_role('button', name='Collapse visited regions in United Kingdom').wait_for()
         panel.get_by_role('button', name='Expand visited regions in United States').click()
+        panel.get_by_role('button', name='Collapse visited regions in United States').wait_for()
         before = self.page.evaluate("scrollY")
         heading_before = heading.bounding_box()
         divider_before = divider.bounding_box()
@@ -415,12 +448,18 @@ class PanelBrowserTests(unittest.TestCase):
         self.page.wait_for_function("renderer(0).selectedLocation==='US'")
         self.assertEqual(self.page.evaluate("renderer(0).continent"), "World")
         self.assertEqual(panel.locator('.country[aria-label="United States"]').get_attribute("aria-current"), "true")
+        visitors = panel.locator('.search-result-visitors')
+        regions = panel.locator('.search-result-regions')
+        self.assertEqual(visitors.evaluate("element=>getComputedStyle(element).borderLeftWidth"), "0px")
+        self.assertEqual(regions.evaluate("element=>getComputedStyle(element).borderLeftWidth"), "1px")
         self.assertEqual(panel.locator('[data-country-item="US"] .visited-subdivision-list').count(), 0)
         panel.get_by_role('button', name='Expand visited regions in United States').click()
         panel.locator('[data-location-select="US-CA"]').click()
-        self.page.wait_for_function("renderer(0).selectedLocation==='US-CA'")
+        self.page.wait_for_function("renderer(0).querySelector('[data-location=\"US-CA\"]')?.getAttribute('aria-current')==='true'")
         self.assertEqual(panel.locator('[data-location="US-CA"]').get_attribute("aria-current"), "true")
         self.assertEqual(panel.locator('[data-location-select="US-CA"]').get_attribute("aria-current"), "true")
+        self.assertEqual(panel.locator('[data-location="US-CA"]').evaluate("element=>getComputedStyle(element).fill"), "rgb(139, 114, 154)")
+        self.assertIn("rgb(139, 114, 154)", panel.locator('[data-location-select="US-CA"]').locator('..').evaluate("element=>getComputedStyle(element).boxShadow"))
         self.assertEqual(self.page.evaluate("JSON.stringify(snapshot.travellers)"), before)
         self.assertEqual(self.page.evaluate("wsMessages.filter(message=>message.type==='beenthere/change').length"), 0)
         self.assertEqual(self.errors, [])
@@ -460,7 +499,7 @@ class PanelBrowserTests(unittest.TestCase):
         panel.get_by_role('button', name='Mark visited', exact=True).click()
         self.page.wait_for_function("renderer(0).querySelector('#toggle-search-result')?.textContent.trim()==='Mark unvisited'")
         self.assertEqual(self.page.evaluate("snapshot.travellers.alice.countries"), ['US'])
-        self.assertEqual(panel.locator('.search-result-regions').inner_text(), 'Regions: 0 / 51')
+        self.assertEqual(panel.locator('.search-result-regions').inner_text(), '0 of 51 regions visited')
         self.assertEqual(messages, [])
         self.assertEqual(self.page.evaluate(
             "wsMessages.filter(message=>message.type==='beenthere/change').length"
@@ -814,7 +853,7 @@ class PanelBrowserTests(unittest.TestCase):
         search.press("Enter")
         self.assertEqual(panel.locator(".search-result-name").inner_text(), "France")
         search.fill("aus")
-        panel.locator(".sidebar-heading").first.click()
+        panel.locator(".view-heading").click()
         self.assertEqual(search.get_attribute("aria-expanded"), "false")
         panel.locator("#view").select_option("g:family")
         panel.locator("#continent").select_option("Europe")
@@ -855,17 +894,40 @@ class PanelBrowserTests(unittest.TestCase):
                 border = banner.evaluate('element=>{const style=getComputedStyle(element);return [style.borderLeftWidth,style.borderTopWidth,style.borderLeftColor,style.borderTopColor];}')
                 self.assertEqual(border[0:2], ['1px', '1px'])
                 self.assertEqual(border[2], border[3])
-                self.assertIn(banner.locator('.search-result-visitors').evaluate("element=>getComputedStyle(element,'::before').content"), ['none', 'normal'])
+                self.assertEqual(border[2], 'rgb(139, 114, 154)')
+                self.assertEqual(banner.locator('.search-result-visitors').evaluate("element=>getComputedStyle(element).borderLeftWidth"), '0px')
                 identity = banner.locator('.search-result-identity').bounding_box()
                 visitors = banner.locator('.search-result-visitors').bounding_box()
                 self.assertGreaterEqual(visitors['x'], identity['x'] + identity['width'])
-                self.assertLessEqual(visitors['x'] - identity['x'] - identity['width'], 16)
+                self.assertEqual(visitors['x'] - identity['x'] - identity['width'], 12)
+                self.assertEqual(banner.locator('.search-result-visitors').evaluate("element=>getComputedStyle(element).paddingLeft"), '16px')
                 close = banner.locator('#close-country').bounding_box()
                 self.assertLessEqual(box['x'] + box['width'] - close['x'] - close['width'], 12)
                 sidebar_selection = panel.locator('[data-country-item="FR"]')
                 self.assertIn('selected', sidebar_selection.get_attribute('class'))
-                self.assertNotEqual(sidebar_selection.evaluate('element=>getComputedStyle(element).boxShadow'), 'none')
-                self.assertEqual(panel.locator('.country[aria-label="France"]').evaluate('element=>getComputedStyle(element).stroke'), 'rgb(255, 255, 255)')
+                self.assertIn('rgb(139, 114, 154)', sidebar_selection.evaluate('element=>getComputedStyle(element).boxShadow'))
+                country = panel.locator('.country[aria-label="France"]')
+                self.assertEqual(country.evaluate('element=>getComputedStyle(element).fill'), 'rgb(139, 114, 154)')
+                self.assertEqual(country.evaluate('element=>getComputedStyle(element).stroke'), 'rgb(139, 114, 154)')
+                self.assertEqual(country.evaluate('element=>getComputedStyle(element).strokeWidth'), '0.7px')
+        close_button = banner.locator('#close-country')
+        search_input = panel.locator('#search')
+        search_input.focus()
+        focus_style = search_input.evaluate("""element=>{
+            const style=getComputedStyle(element);
+            return [style.outlineStyle,style.outlineWidth,style.outlineColor];
+        }""")
+        self.assertEqual(focus_style, ['solid', '2px', 'rgb(99, 243, 229)'])
+        self.assertNotEqual(focus_style[2], banner.evaluate('element=>getComputedStyle(element).borderColor'))
+        self.assertEqual(close_button.get_attribute('title'), 'Deselect country')
+        self.assertEqual(close_button.get_attribute('aria-label'), 'Deselect country')
+        self.assertEqual(close_button.bounding_box()['width'], 44)
+        self.page.mouse.move(0, 0)
+        self.assertEqual(close_button.evaluate('element=>getComputedStyle(element).color'), 'rgb(159, 179, 195)')
+        self.assertEqual(close_button.evaluate('element=>getComputedStyle(element).backgroundColor'), 'rgba(0, 0, 0, 0)')
+        close_button.hover()
+        self.assertEqual(close_button.evaluate('element=>getComputedStyle(element).color'), 'rgb(230, 248, 255)')
+        self.assertEqual(close_button.evaluate('element=>getComputedStyle(element).backgroundColor'), 'rgb(32, 58, 81)')
         panel.locator('#view').select_option('t:alice')
         panel.get_by_role('button', name='Mark unvisited', exact=True).wait_for(state='visible')
         self.assertEqual(banner.get_by_text('Visited', exact=True).count(), 0)
@@ -900,6 +962,24 @@ class PanelBrowserTests(unittest.TestCase):
                     self.assertEqual(visitors.locator('.traveller-bubble').count(), 1)
         self.assertEqual(self.page.evaluate('JSON.stringify(snapshot.travellers)'), before)
         self.assertEqual(self.page.evaluate("wsMessages.filter(message=>message.type==='beenthere/change').length"), 0)
+        self.assertEqual(self.errors, [])
+
+    def test_map_selection_highlight_does_not_change_visit_colors(self):
+        self.open_panels()
+        panel = self.page.locator('beenthere-panel')
+        panel.locator('#search').fill('Australia')
+        panel.get_by_role('option', name='Australia', exact=True).click()
+        self.page.wait_for_function("renderer(0).querySelector('.country[aria-label=\"Australia\"]')?.getAttribute('aria-current')==='true'")
+        country = panel.locator('.country[aria-label="Australia"]')
+        self.assertEqual(country.evaluate('element=>getComputedStyle(element).fill'), 'rgb(139, 114, 154)')
+        self.assertEqual(country.get_attribute('aria-pressed'), 'false')
+        self.page.keyboard.press('Tab')
+        country.focus()
+        self.assertEqual(country.evaluate('element=>getComputedStyle(element).stroke'), 'rgb(226, 212, 235)')
+        panel.locator('#close-country').dispatch_event('click')
+        self.page.wait_for_function("!renderer(0).querySelector('.country.selected')")
+        self.assertEqual(country.evaluate('element=>getComputedStyle(element).fill'), 'rgb(36, 65, 89)')
+        self.assertEqual(panel.locator('.country[aria-label="France"]').evaluate('element=>getComputedStyle(element).fill'), 'rgb(35, 217, 207)')
         self.assertEqual(self.errors, [])
 
     def test_country_banner_visitor_bubbles_fit_desktop_and_mobile(self):
@@ -983,7 +1063,7 @@ class PanelBrowserTests(unittest.TestCase):
                     self.assertEqual(bubbles.evaluate_all("elements=>elements.map(element=>element.getAttribute('aria-label'))"), expected_names)
                     self.assertEqual(banner.locator('.visitor-overflow').count(), int(count > 4))
                     self.assertEqual(banner.locator('#toggle-search-result').count(), 0)
-                    self.assertEqual(banner.locator('.search-result-regions').inner_text(), f'Regions: {int(count > 0)} / 51')
+                    self.assertEqual(banner.locator('.search-result-regions').inner_text(), f'{int(count > 0)} of 51 regions visited')
                     if not count:
                         self.assertEqual(banner.get_by_text('Not visited', exact=True).count(), 1)
                         continue
@@ -1037,20 +1117,20 @@ class PanelBrowserTests(unittest.TestCase):
         self.assertEqual(bubbles.evaluate_all("elements=>elements.map(element=>element.getAttribute('aria-label'))"), ['Alice', 'Bob'])
         self.assertEqual(bubbles.all_inner_texts(), ['A', 'B'])
         alice_colour = panel.get_by_role('img', name='Alice', exact=True).evaluate('element=>getComputedStyle(element).backgroundColor')
-        self.assertEqual(panel.locator(".search-result-regions").inner_text(), "Regions: 2 / 51")
+        self.assertEqual(panel.locator(".search-result-regions").inner_text(), "2 of 51 regions visited")
         self.assertIn("/us.png", panel.locator(".search-result img").get_attribute("src"))
         self.assertEqual(panel.locator("#edit-country").count(), 0)
         panel.locator("#view").select_option("")
         self.page.wait_for_function("!!renderer(0).querySelector('.traveller-bubble[aria-label=\"Outsider\"]')")
         self.assertEqual(bubbles.evaluate_all("elements=>elements.map(element=>element.getAttribute('aria-label'))"), ['Alice', 'Bob', 'Outsider'])
         self.assertEqual(panel.get_by_role('img', name='Alice', exact=True).evaluate('element=>getComputedStyle(element).backgroundColor'), alice_colour)
-        self.assertEqual(panel.locator(".search-result-regions").inner_text(), "Regions: 3 / 51")
+        self.assertEqual(panel.locator(".search-result-regions").inner_text(), "3 of 51 regions visited")
         panel.locator("#view").select_option("t:bob")
         self.page.wait_for_function("renderer(0).querySelector('#view')?.value==='t:bob' && !!renderer(0).querySelector('#toggle-search-result')")
         self.assertTrue(panel.get_by_role("button", name="Mark unvisited", exact=True).is_visible())
-        self.assertEqual(panel.locator(".search-result-regions").inner_text(), "Regions: 1 / 51")
+        self.assertEqual(panel.locator(".search-result-regions").inner_text(), "1 of 51 regions visited")
         panel.locator('[data-location="US-FL"]').dispatch_event("click")
-        self.page.wait_for_function("renderer(0).querySelector('.search-result-regions')?.textContent==='Regions: 0 / 51'")
+        self.page.wait_for_function("renderer(0).querySelector('.search-result-regions')?.textContent==='0 of 51 regions visited'")
         self.assertTrue(panel.get_by_role('button', name='Mark unvisited', exact=True).is_visible())
         panel.get_by_role("button", name="Mark unvisited", exact=True).click()
         self.page.wait_for_function("renderer(0).querySelector('#toggle-search-result')?.textContent.trim()==='Mark visited'")
@@ -1478,7 +1558,9 @@ class PanelBrowserTests(unittest.TestCase):
                 "false",
             )
         panel.get_by_role('button', name='Expand visited regions in United Kingdom').click()
+        panel.get_by_role('button', name='Collapse visited regions in United Kingdom').wait_for()
         panel.get_by_role('button', name='Expand visited regions in United States').click()
+        panel.get_by_role('button', name='Collapse visited regions in United States').wait_for()
         for country in ("GB", "US"):
             self.assertEqual(
                 panel.locator(f'[data-country-item="{country}"] .region-link').get_attribute("aria-expanded"),
@@ -1486,7 +1568,7 @@ class PanelBrowserTests(unittest.TestCase):
             )
         self.page.locator("beenthere-panel").locator("#view").select_option("g:family")
         self.page.wait_for_function(
-            "renderer(0).selection==='g:family' && renderer(0).expandedCountries.size===0"
+            "renderer(0).selection==='g:family' && renderer(0).expandedCountries.size===0 && !renderer(0).querySelector('.region-link[aria-expanded=\"true\"]')"
         )
         for country in ("GB", "US"):
             self.assertEqual(
@@ -1495,7 +1577,9 @@ class PanelBrowserTests(unittest.TestCase):
             )
         for country in ("GB", "US"):
             panel.get_by_role('button', name=f'Expand visited regions in {"United Kingdom" if country == "GB" else "United States"}').click()
+            panel.get_by_role('button', name=f'Collapse visited regions in {"United Kingdom" if country == "GB" else "United States"}').wait_for()
         panel.locator("#continent").select_option("Europe")
+        self.page.wait_for_function("renderer(0).querySelector('#continent')?.value==='Europe' && !renderer(0).querySelector('.region-link[aria-expanded=\"true\"]')")
         for country in ("GB", "US"):
             self.assertEqual(
                 panel.locator(f'[data-country-item="{country}"] .region-link').get_attribute("aria-expanded"),

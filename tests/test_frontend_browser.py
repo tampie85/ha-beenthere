@@ -454,6 +454,15 @@ class PanelBrowserTests(unittest.TestCase):
         self.assertEqual(regions.evaluate("element=>getComputedStyle(element).borderLeftWidth"), "1px")
         self.assertEqual(regions.evaluate("element=>getComputedStyle(element).fontSize"), "12px")
         self.assertEqual(regions.evaluate("element=>getComputedStyle(element).color"), "rgb(168, 192, 208)")
+        gaps = panel.locator('.search-result-info').evaluate("""element=>{
+            const country=element.querySelector('.search-result-name').getBoundingClientRect();
+            const visitors=element.querySelector('.search-result-visitors').getBoundingClientRect();
+            const label=element.querySelector('.visitor-label').getBoundingClientRect();
+            const text=document.createRange();
+            text.selectNodeContents(element.querySelector('.search-result-regions'));
+            return [label.left-country.right,text.getBoundingClientRect().left-visitors.right];
+        }""")
+        self.assertEqual(gaps, [24, 24])
         self.assertEqual(panel.locator('[data-country-item="US"] .visited-subdivision-list').count(), 0)
         panel.get_by_role('button', name='Expand visited regions in United States').click()
         panel.locator('[data-location-select="US-CA"]').click()
@@ -890,8 +899,9 @@ class PanelBrowserTests(unittest.TestCase):
                 self.assertLessEqual(search['width'], 360)
                 self.assertEqual(search['height'], box['height'])
                 self.assertEqual(search['y'], box['y'])
-                self.assertEqual(banner.locator('img').bounding_box()['width'], 24)
-                self.assertEqual(banner.locator('.search-result-name').evaluate("element=>[getComputedStyle(element).fontSize,getComputedStyle(element).fontWeight,getComputedStyle(element).color]"), ['14px', '650', 'rgb(255, 255, 255)'])
+                self.assertEqual(banner.locator('img').bounding_box()['width'], 34)
+                self.assertEqual(banner.locator('img').bounding_box()['height'], 25.5)
+                self.assertEqual(banner.locator('.search-result-name').evaluate("element=>[getComputedStyle(element).fontSize,getComputedStyle(element).fontWeight,getComputedStyle(element).color]"), ['16px', '650', 'rgb(255, 255, 255)'])
                 self.assertEqual(banner.locator('.visitor-label').evaluate("element=>[getComputedStyle(element).fontSize,getComputedStyle(element).color]"), ['12px', 'rgb(168, 192, 208)'])
                 border = banner.evaluate('element=>{const style=getComputedStyle(element);return [style.borderLeftWidth,style.borderTopWidth,style.borderLeftColor,style.borderTopColor];}')
                 self.assertEqual(border[0:2], ['1px', '1px'])
@@ -902,7 +912,7 @@ class PanelBrowserTests(unittest.TestCase):
                 visitors = banner.locator('.search-result-visitors').bounding_box()
                 self.assertGreaterEqual(visitors['x'], identity['x'] + identity['width'])
                 self.assertEqual(visitors['x'] - identity['x'] - identity['width'], 12)
-                self.assertEqual(banner.locator('.search-result-visitors').evaluate("element=>getComputedStyle(element).paddingLeft"), '16px')
+                self.assertEqual(banner.locator('.search-result-visitors').evaluate("element=>getComputedStyle(element).paddingLeft"), '12px')
                 close = banner.locator('#close-country').bounding_box()
                 self.assertLessEqual(box['x'] + box['width'] - close['x'] - close['width'], 12)
                 sidebar_selection = panel.locator('[data-country-item="FR"]')

@@ -22,6 +22,10 @@ Territories with their own country code remain separate from their
 administering country: France and French Guiana, for example, are independent
 selections.
 
+Use the map controls to zoom in, zoom out, or reset the current continent's
+view. When zoomed in, drag the map or focus it and use the arrow keys to pan.
+Changing continents restores the default view.
+
 ## Geographic model and regional tracking
 
 The backend has a shared geographic catalogue in `geography.json` and a

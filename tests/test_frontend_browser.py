@@ -902,6 +902,65 @@ class PanelBrowserTests(unittest.TestCase):
         self.assertEqual(self.page.evaluate("wsMessages.filter(message=>message.type==='beenthere/change').length"), 0)
         self.assertEqual(self.errors, [])
 
+    def test_country_search_footnote_stays_visible_when_results_scroll(self):
+        self.open_panels()
+        panel = self.page.locator("beenthere-panel")
+        panel.locator("#continent").select_option("Europe")
+        self.page.wait_for_function("!renderer(0)._renderScheduled")
+        self.page.evaluate("""()=>{
+            const card=renderer(0);
+            for(let i=0;i<12;i++){
+                card.geo.features.push({properties:{
+                    ISO_A2_EH:'Q'+String.fromCharCode(65+i),
+                    ADMIN:'Outside '+String.fromCharCode(65+i),
+                    CONTINENT:'Africa'
+                }});
+            }
+        }""")
+        search = panel.locator("#search")
+        search.fill("Outside")
+        dropdown = panel.locator("#country-suggestions-panel")
+        results = panel.locator("#country-suggestions")
+        footnote = panel.locator("#country-search-footnote")
+        self.assertEqual(results.get_by_role("option").count(), 12)
+
+        def assert_partial_fifth():
+            geometry = results.evaluate("""list=>{
+                const viewport=list.getBoundingClientRect();
+                const fourth=list.children[3].getBoundingClientRect();
+                const fifth=list.children[4].getBoundingClientRect();
+                return {bottom:viewport.bottom,fourthBottom:fourth.bottom,
+                    fifthTop:fifth.top,fifthBottom:fifth.bottom};
+            }""")
+            self.assertLessEqual(geometry["fourthBottom"], geometry["bottom"])
+            self.assertLess(geometry["fifthTop"], geometry["bottom"])
+            self.assertGreater(geometry["fifthBottom"], geometry["bottom"])
+
+        assert_partial_fifth()
+        footer_top = footnote.bounding_box()["y"]
+        search.press("ArrowUp")
+        geometry = results.evaluate("""list=>{
+            const last=list.lastElementChild.getBoundingClientRect();
+            const viewport=list.getBoundingClientRect();
+            return {scrollTop:list.scrollTop,lastTop:last.top,lastBottom:last.bottom,
+                top:viewport.top,bottom:viewport.bottom};
+        }""")
+        self.assertGreater(geometry["scrollTop"], 0)
+        self.assertGreaterEqual(geometry["lastTop"], geometry["top"])
+        self.assertLessEqual(geometry["lastBottom"], geometry["bottom"])
+        self.assertAlmostEqual(footnote.bounding_box()["y"], footer_top, delta=1)
+        self.assertLessEqual(
+            footnote.bounding_box()["y"] + footnote.bounding_box()["height"],
+            dropdown.bounding_box()["y"] + dropdown.bounding_box()["height"],
+        )
+        panel.locator("#continent").select_option("World")
+        self.page.wait_for_function("!renderer(0)._renderScheduled")
+        search.fill("Outside")
+        self.assertEqual(results.get_by_role("option").count(), 12)
+        self.assertFalse(footnote.is_visible())
+        assert_partial_fifth()
+        self.assertEqual(self.errors, [])
+
     def test_country_banner_uses_compact_search_and_clear_identity(self):
         self.open_panels()
         panel = self.page.locator('beenthere-panel')

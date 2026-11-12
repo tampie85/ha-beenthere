@@ -203,6 +203,18 @@ class FrontendTests(unittest.TestCase):
         self.assertEqual(self.context.eval("card.selectedLocation"), "FR")
         self.assertEqual(self.context.eval("card.searchResult"), "FR")
 
+    def test_selecting_a_region_does_not_change_visits(self):
+        self.context.eval("""
+            card._hass.user.is_admin=true;
+            card.expandedCountries=new Set();
+            card.data.map_settings={subdivision_countries:['US']};
+            card.selectLocation('US-CA');
+        """)
+        self.drain_jobs()
+        self.assertEqual(self.context.eval("calls"), 0)
+        self.assertEqual(self.context.eval("card.selectedLocation"), "US-CA")
+        self.assertEqual(self.context.eval("card.searchResult"), "US")
+
     def test_non_admin_cannot_open_settings_or_group_editor(self):
         self.context.eval("card.toggleSettings(); card.editGroup();")
         self.assertFalse(self.context.eval("!!card.settingsOpen"))

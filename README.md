@@ -33,15 +33,14 @@ version-2 storage model. Global map-detail controls are available in the
 administrator Settings view. When subdivision detail is enabled, region
 boundaries appear on the main map and the visited-country sidebar can expand a
 country to show only its visited regions. Only explicitly visited regions are
-filled; a country-level visit does not fill any region. Clicking a country or
-sidebar entry selects it without changing visit history. Administrators viewing
+filled; a country-level visit does not fill any region. Clicking a country,
+region or sidebar entry selects it without changing visit history. Administrators viewing
 one traveller can use **Mark visited** or **Mark unvisited** directly in the
-selected-country banner, without a confirmation dialog. Unmarking removes only
-the country-level visit and preserves regional visits. Countries with remaining
-regional visits stay visited; those visits can only be removed through the
-regional interface. Region boundaries still toggle individual region
-visits in editable traveller views. Keyboard users can focus map boundaries and
-press Enter or Space.
+selected-location banner, without a confirmation dialog. Unmarking a country
+removes only the country-level visit and preserves regional visits; unmarking a
+region removes only that region's visit. Countries with remaining regional visits
+stay visited. Keyboard users can focus map boundaries and press Enter or Space
+to select them.
 
 Group and Everyone views show the **union** of explicit visits across their
 selected members, not an intersection. All group views are read-only, including
@@ -71,7 +70,7 @@ administrator's individual traveller view as editable. The visited-country
 heading and divider stay inside their rounded card, above the independently
 scrolling list. The selectors and heading remain visible while only the country list scrolls;
 visited-region entries start collapsed and can be expanded independently.
-Expanded entries are read-only and region visits are managed through the map.
+Expanded entries select regions; visits are managed in the selected-location banner.
 A country remains visible when its visits come only from regions, including
 while regional detail is disabled. Visit controls
 are disabled during a pending write; a failed write leaves the published visit

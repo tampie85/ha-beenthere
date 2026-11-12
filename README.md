@@ -65,10 +65,16 @@ sidebar lists unique visited countries alphabetically, including countries
 visited through regions, and shows the count. Selecting a country only highlights
 it on the map. Administrators can remove an explicit country-only visit from
 the sidebar after confirmation; this does not remove any regional history.
-The Map Filters card groups the traveller and continent selectors and marks an
-administrator's individual traveller view as editable. The visited-country
+The **Filters** button stays at the toolbar's right edge, with the selected-country
+banner between it and search on desktop. Its floating Map Filters popover stays
+within the viewport, scrolling internally on short screens and opening above
+the button when there is more room there. It contains the existing traveller,
+continent and group comparison controls. Filter
+changes keep it open; click the button again, click outside or press Escape to
+close it. An administrator's individual traveller view is marked as editable.
+The visited-country panel aligns with the map and fills its height. Its
 heading and divider stay inside their rounded card, above the independently
-scrolling list. The selectors and heading remain visible while only the country list scrolls;
+scrolling list. The heading remains visible while only the country list scrolls;
 visited-region entries start collapsed and can be expanded independently.
 Expanded entries select regions; visits are managed in the selected-location banner.
 A country remains visible when its visits come only from regions, including

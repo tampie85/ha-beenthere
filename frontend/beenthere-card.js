@@ -19,17 +19,36 @@ class VisitedCountriesCard extends HTMLElement {
     this.addEventListener('beenthere-toggle-settings', this._toggleSettingsHandler);
     this._dismissSearchHandler ||= event => {
       if(!event.composedPath().includes(this.querySelector('#country-search')))this.closeSearch();
+      if(!event.composedPath().includes(this.querySelector('.filters-anchor')))this.setFiltersOpen(false);
       this.querySelectorAll('.visitor-disclosure[open]').forEach(details=>{
         if(!event.composedPath().includes(details))details.open=false;
       });
     };
+    this._dismissFiltersHandler ||= event => {
+      if(event.key==='Escape'&&this.filtersOpen) {
+        event.preventDefault();
+        this.setFiltersOpen(false);
+        this.querySelector('#filters-toggle')?.focus({preventScroll:true});
+      }
+    };
+    this._positionFiltersHandler ||= () => this.positionFilters();
     this.ownerDocument?.addEventListener('pointerdown',this._dismissSearchHandler);
+    this.ownerDocument?.addEventListener('keydown',this._dismissFiltersHandler);
+    this.ownerDocument?.addEventListener('scroll',this._positionFiltersHandler,true);
+    this.ownerDocument?.defaultView?.addEventListener('resize',this._positionFiltersHandler);
+    this.ownerDocument?.defaultView?.visualViewport?.addEventListener('resize',this._positionFiltersHandler);
+    this.ownerDocument?.defaultView?.visualViewport?.addEventListener('scroll',this._positionFiltersHandler);
     this.syncConnection();
   }
   disconnectedCallback() {
     this._connected = false;
     this.removeEventListener('beenthere-toggle-settings', this._toggleSettingsHandler);
     this.ownerDocument?.removeEventListener('pointerdown',this._dismissSearchHandler);
+    this.ownerDocument?.removeEventListener('keydown',this._dismissFiltersHandler);
+    this.ownerDocument?.removeEventListener('scroll',this._positionFiltersHandler,true);
+    this.ownerDocument?.defaultView?.removeEventListener('resize',this._positionFiltersHandler);
+    this.ownerDocument?.defaultView?.visualViewport?.removeEventListener('resize',this._positionFiltersHandler);
+    this.ownerDocument?.defaultView?.visualViewport?.removeEventListener('scroll',this._positionFiltersHandler);
     this.stopConnection();
   }
   setConfig(config) {
@@ -37,6 +56,7 @@ class VisitedCountriesCard extends HTMLElement {
     this.config = config;
     this.selection = this.selection || '';
     this.continent = this.continent || 'World';
+    this.groupVisitMode = this.groupVisitMode || 'Anyone';
     this.expandedCountries ||= new Set();
     this.focusedCountry ||= null;
     this.render();
@@ -121,6 +141,7 @@ class VisitedCountriesCard extends HTMLElement {
   }
   toggleSettings() {
     if(!this.canEdit())return;
+    this.setFiltersOpen(false);
     this.settingsOpen=!this.settingsOpen;
     this.render();
     this.dispatchEvent(new CustomEvent('beenthere-settings-changed', {
@@ -265,11 +286,27 @@ class VisitedCountriesCard extends HTMLElement {
     return {type:'all',name:'Everyone',members:Object.keys(t)};
   }
   selectedMembers(view) { return view.type==='traveller'?[view.id]:view.members; }
+  shouldShowGroupVisitFilter() {
+    const view = this.chosen();
+    const memberCount = this.selectedMembers(view).length;
+    return memberCount >= 2;
+  }
   resetRegionExpansion() {
     this.expandedCountries.clear();
   }
   visited(view) {
-    return new Set(this.selectedMembers(view).flatMap(id=>this.data?.travellers?.[id]?.countries||[]));
+    const members = this.selectedMembers(view);
+    if (members.length < 2 || !this.shouldShowGroupVisitFilter() || this.groupVisitMode === 'Anyone') {
+      return new Set(members.flatMap(id => this.data?.travellers?.[id]?.countries || []));
+    }
+    if (this.groupVisitMode === 'Everyone') {
+      if (members.length === 0) return new Set();
+      const memberCountries = members.map(id => new Set(this.data?.travellers?.[id]?.countries || []));
+      const first = memberCountries[0];
+      if (!first) return new Set();
+      return new Set([...first].filter(country => memberCountries.every(set => set.has(country))));
+    }
+    return new Set(members.flatMap(id => this.data?.travellers?.[id]?.countries || []));
   }
   parentCountry(code) {
     if(typeof code!=='string')return null;
@@ -731,7 +768,36 @@ class VisitedCountriesCard extends HTMLElement {
   }
   viewOptions() {
     const data=this.data||DEFAULT_DATA;
-    return [`<option value="">Everyone</option>`,...Object.entries(data.travellers).map(([id,p])=>`<option value="t:${this.esc(id)}" ${this.selection===`t:${id}`?'selected':''}>${this.esc(p.name)}</option>`),...Object.entries(data.groups).map(([id,g])=>`<option value="g:${this.esc(id)}" ${this.selection===`g:${id}`?'selected':''}>${this.esc(g.name)} (group)</option>`)].join('');
+    return [`<option value="">All travellers</option>`,...Object.entries(data.travellers).map(([id,p])=>`<option value="t:${this.esc(id)}" ${this.selection===`t:${id}`?'selected':''}>${this.esc(p.name)}</option>`),...Object.entries(data.groups).map(([id,g])=>`<option value="g:${this.esc(id)}" ${this.selection===`g:${id}`?'selected':''}>${this.esc(g.name)} (group)</option>`)].join('');
+  }
+  setFiltersOpen(open) {
+    this.filtersOpen=open;
+    const popover=this.querySelector('#map-filters');
+    if(popover)popover.hidden=!open;
+    this.querySelector('#filters-toggle')?.setAttribute('aria-expanded',String(open));
+    if(open)this.positionFilters();
+  }
+  positionFilters() {
+    if(!this.filtersOpen)return;
+    const popover=this.querySelector('#map-filters');
+    const anchor=this.querySelector('.filters-anchor');
+    if(!popover||!anchor)return;
+    const viewport=this.ownerDocument.defaultView.visualViewport;
+    const top=viewport?.offsetTop||0;
+    const left=(viewport?.offsetLeft||0)+12;
+    const right=left+(viewport?.width||this.ownerDocument.documentElement.clientWidth)-24;
+    const bottom=top+(viewport?.height||this.ownerDocument.documentElement.clientHeight);
+    const bounds=anchor.getBoundingClientRect();
+    const below=Math.max(0,bottom-bounds.bottom-18);
+    const above=Math.max(0,bounds.top-top-18);
+    const openAbove=below<Math.min(popover.scrollHeight,240)&&above>below;
+    popover.style.maxHeight=`${openAbove?above:below}px`;
+    popover.style.top=openAbove?'auto':'calc(100% + 6px)';
+    popover.style.bottom=openAbove?'calc(100% + 6px)':'auto';
+    popover.style.maxWidth=`${Math.max(0,right-left)}px`;
+    const width=popover.getBoundingClientRect().width;
+    const position=Math.max(left,Math.min(bounds.right-width,right-width));
+    popover.style.right=`${bounds.right-position-width}px`;
   }
   render() {
     if(!this.config)return;
@@ -739,6 +805,9 @@ class VisitedCountriesCard extends HTMLElement {
     const visitFocused=!!this.querySelector('#toggle-search-result:focus');
     const focusedDetail = this.querySelector('[data-map-detail]:focus')?.dataset.mapDetail;
     const focusedLocation = this.querySelector('[data-location]:focus')?.dataset.location;
+    const focusedFilter = this.querySelector('.filters-anchor :focus');
+    const focusedFilterId = focusedFilter?.id;
+    const focusedVisitMode = focusedFilter?.dataset.visitMode;
     const data=this.data||{travellers:{},groups:{}};
     const view=this.chosen();
     const visited=this.visited(view);
@@ -776,6 +845,7 @@ class VisitedCountriesCard extends HTMLElement {
       .filter(feature=>this.parentCountry(feature.properties?.id));
     const continentOptions=['World',...CONTINENTS].map(continent=>`<option value="${continent}" ${this.continent===continent?'selected':''}>${continent==='World'?'All continents':continent}</option>`).join('');
     const options=this.viewOptions();
+    const filters=`<section id="map-filters" class="view-controls" role="region" aria-labelledby="view-heading" ${this.filtersOpen?'':'hidden'}><h2 id="view-heading" class="view-heading">Map Filters</h2><div class="view-control-row"><div class="view-selector"><ha-icon icon="mdi:account-multiple-outline" aria-hidden="true"></ha-icon><select id="view" aria-label="Travellers / Groups">${options}</select></div>${editable?'<span class="view-editable">Editable</span>':''}</div><div class="view-control-row"><div class="view-selector"><ha-icon icon="mdi:web" aria-hidden="true"></ha-icon><select id="continent" aria-label="Continent">${continentOptions}</select></div></div>${this.shouldShowGroupVisitFilter()?`<div class="group-visit-filter"><div class="group-visit-segment-group" role="group" aria-label="Group visit filter"><button type="button" class="group-visit-segment ${this.groupVisitMode==='Anyone'?'active':''}" data-visit-mode="Anyone" aria-pressed="${this.groupVisitMode==='Anyone'}">Anyone</button><button type="button" class="group-visit-segment ${this.groupVisitMode==='Everyone'?'active':''}" data-visit-mode="Everyone" aria-pressed="${this.groupVisitMode==='Everyone'}">Everyone</button></div><div aria-label="Filter explanation"><p class="group-visit-help"><strong>${this.groupVisitMode==='Anyone'?'Anyone':'Everyone'}</strong>: ${this.groupVisitMode==='Anyone'?'Visited by at least one traveller':'Visited by every selected traveller'}</p></div></div>`:''}</section>`;
     const selectedLocation=this.selectedLocation;
     const shapes=features.map((f,i)=>{
       const code=this.iso(f),active=code&&derivedCountries.has(code);
@@ -801,8 +871,10 @@ class VisitedCountriesCard extends HTMLElement {
       .settings-dialog{width:min(440px,calc(100vw - 32px));max-width:none;max-height:calc(100dvh - 32px);overflow:auto;padding:0;border:1px solid #37536a;border-radius:12px;background:#112b3f;color:#e6f8ff;box-shadow:0 18px 60px #0009}.settings-dialog::backdrop{background:#050b14bb}.dialog-content{display:flex;flex-direction:column;gap:16px;padding:20px}.dialog-content h2{margin:0;font-size:19px}.dialog-content p{margin:0;color:#c6d9e5;line-height:1.5}.form-field{display:flex;flex-direction:column;gap:8px;font-size:14px}.form-field input{box-sizing:border-box;width:100%;min-height:44px}.member-list{display:flex;flex-direction:column;gap:2px;max-height:240px;overflow:auto;margin:0;padding:10px;border:1px solid #37536a;border-radius:8px}.member-list legend{padding:0 6px;color:#b6e8f1;font-size:14px}.member-option{display:flex;align-items:center;gap:10px;min-height:40px;cursor:pointer}.member-option input{width:20px;height:20px;margin:0;accent-color:#63f3e5}.member-option span{overflow-wrap:anywhere}.dialog-error{color:#ffb6ae!important}.dialog-actions{display:flex;justify-content:flex-end;gap:10px}.dialog-actions button{min-width:92px;min-height:44px}.dialog-actions .dialog-delete{border-color:#a74343;background:#652b34;color:#fff}.dialog-actions .dialog-delete:hover{border-color:#ff8b8b;background:#7c303a}
       .map-layout{display:grid;grid-template-columns:minmax(0,1fr) 270px;gap:16px;margin-top:14px;align-items:stretch}.map-column{min-width:0;min-height:0}.region-panel{box-sizing:border-box;contain:size;display:flex;flex-direction:column;gap:12px;min-width:0;min-height:0;overflow:hidden}.region-panel select{box-sizing:border-box;width:100%;border-radius:6px;background:#14283a}.region-panel .stats{flex-direction:column}.region-panel .stat{border:0;border-radius:0;background:transparent;padding:8px 0}.map-layout .map{min-width:0}
       .region-panel .sidebar-heading{display:block;flex:none;margin:0 0 8px;font-size:13px;font-weight:400;line-height:normal;color:#b6e8f1}.region-panel select+.sidebar-heading{margin-top:16px}
-      .view-controls{box-sizing:border-box;flex:none;min-width:0;padding:12px;border:1px solid #31516a;border-radius:11px;background:#112b3f}.view-heading{margin:0 0 10px;font-size:15px;line-height:1.3}.view-control-row{display:flex;align-items:center;flex-wrap:wrap;gap:8px}.view-control-row+.view-control-row{margin-top:10px}.view-selector{position:relative;flex:1 1 140px;min-width:0}.view-selector ha-icon{position:absolute;left:10px;top:50%;transform:translateY(-50%);--mdc-icon-size:18px;color:#c6d9e5;pointer-events:none}.region-panel .view-selector select{box-sizing:border-box;width:100%;min-height:44px;padding:8px 26px 8px 36px;border:1px solid #66849a;border-radius:8px;background:#0d2032;color:#e6f8ff;font-size:13px}.view-selector select:focus-visible{outline:2px solid #63f3e5;outline-offset:2px}.view-editable{flex:none;padding:4px 8px;border:1px solid #007f8e;border-radius:12px;background:#005769;color:#63f3e5;font-size:11px;font-weight:600;white-space:nowrap}
-      .region-panel .view-selector select{appearance:none;-webkit-appearance:none;padding-right:32px}.view-selector::after{content:"";position:absolute;right:13px;top:50%;width:7px;height:7px;border-right:2px solid #e6f8ff;border-bottom:2px solid #e6f8ff;transform:translateY(-70%) rotate(45deg);pointer-events:none}
+      .search-toolbar{display:flex;align-items:stretch;min-width:0;grid-column:1;grid-row:1}.search-toolbar .country-search{flex:1}.filters-anchor{position:relative;display:flex;grid-column:3;grid-row:1;align-self:start;height:56px}.filters-toggle{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:0 12px;border-radius:6px;background:#112b3f;font-size:13px;white-space:nowrap}.filters-toggle ha-icon{--mdc-icon-size:18px}.filters-toggle:focus-visible{outline:2px solid #63f3e5;outline-offset:2px}.filters-toggle[aria-expanded="true"]{border-color:#63f3e5}
+      .view-controls{position:absolute;z-index:12;top:calc(100% + 6px);right:0;box-sizing:border-box;width:300px;max-width:calc(100vw - 24px);min-width:0;padding:12px;border:1px solid #31516a;border-radius:6px;background:#112b3f;box-shadow:0 6px 16px #0006}.view-controls[hidden]{display:none}.view-heading{margin:0 0 10px;font-size:15px;line-height:1.3}.view-control-row{display:flex;align-items:center;flex-wrap:wrap;gap:8px}.view-control-row+.view-control-row{margin-top:10px}.view-selector{position:relative;flex:1 1 140px;min-width:0}.view-selector ha-icon{position:absolute;left:10px;top:50%;transform:translateY(-50%);--mdc-icon-size:18px;color:#c6d9e5;pointer-events:none}.view-controls .view-selector select{box-sizing:border-box;width:100%;max-width:100%;min-height:44px;padding:8px 26px 8px 36px;border:1px solid #66849a;border-radius:8px;background:#0d2032;color:#e6f8ff;font-size:13px}.view-selector select:focus-visible{outline:2px solid #63f3e5;outline-offset:2px}.view-editable{flex:none;padding:4px 8px;border:1px solid #007f8e;border-radius:12px;background:#005769;color:#63f3e5;font-size:11px;font-weight:600;white-space:nowrap}
+      .view-controls .view-selector select{appearance:none;-webkit-appearance:none;padding-right:32px}.view-selector::after{content:"";position:absolute;right:13px;top:50%;width:7px;height:7px;border-right:2px solid #e6f8ff;border-bottom:2px solid #e6f8ff;transform:translateY(-70%) rotate(45deg);pointer-events:none}
+      .group-visit-filter{display:flex;flex-direction:column;gap:8px;margin-top:12px}.group-visit-filter.hidden{display:none}.group-visit-segment-group{display:grid;grid-template-columns:1fr 1fr;gap:2px;border:1px solid #37536a;border-radius:8px;overflow:hidden;background:#0d1f2a}.group-visit-segment{display:flex;align-items:center;justify-content:center;min-height:40px;padding:0 12px;border:0;background:transparent;color:#b8d4e0;font-size:13px;font-weight:500;cursor:pointer;transition:background-color .15s,color .15s;line-height:1.2}.group-visit-segment:hover{background:#203a51;color:#e6f8ff}.group-visit-segment.active{background:#0f3a47;color:#63f3e5;border:0}.group-visit-segment:focus-visible{outline:2px solid #63f3e5;outline-offset:-2px}.group-visit-help{color:#9bb4c8;font-size:11px;line-height:1.4;margin:0}
       .visited-country-divider{flex:none;height:1px;margin:0 0 11px;border:0;background:#27445c}.visited-country-section>.visited-country-list,.visited-country-section>.visited-country-empty{margin-top:0}.visited-country-list>.visited-country-item:first-child{border-top:0}
       .map-column{min-width:0}.search-row{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,7fr);gap:14px;align-items:start}.country-search{position:relative;min-width:0;margin:0;height:60px}.country-search input{box-sizing:border-box;width:100%;height:60px;padding:12px 12px 12px 40px;font-size:14px;border-radius:8px;background:#112b3f}.country-search input:focus{outline:2px solid #63f3e5;outline-offset:-2px}.country-search>ha-icon{position:absolute;left:12px;top:20px;--mdc-icon-size:20px;pointer-events:none;color:#9bb4c8}.country-suggestions{position:absolute;z-index:10;top:64px;left:0;right:0;max-height:264px;overflow:auto;list-style:none;padding:0;margin:0;border:1px solid #37536a;border-radius:8px;background:#112b3f;box-shadow:0 6px 16px #0006}.country-suggestions[hidden]{display:none}.country-suggestions:empty{border:0}.country-suggestions li{display:flex;align-items:center;gap:10px;min-height:44px;padding:0 12px;cursor:pointer;overflow-wrap:anywhere}.country-suggestions li img{flex:none;object-fit:contain}.country-suggestions li:hover,.country-suggestions [aria-selected="true"]{background:#234a61;outline:2px solid #63f3e5;outline-offset:-2px}.country-search-status{position:absolute;z-index:11;top:64px;left:0;right:0;box-sizing:border-box;margin:0;padding:14px 12px;background:#112b3f;border:1px solid #37536a;border-radius:8px;overflow-wrap:anywhere}.country-search-status:empty{display:none}.search-result{box-sizing:border-box;display:flex;align-items:center;gap:12px;min-width:0;min-height:60px;padding:7px 10px;border:1px solid #31516a;border-left:3px solid #63f3e5;border-radius:8px;background:#112b3f}.search-result img{flex:none;width:32px;height:22px;object-fit:contain}.search-result-info{display:flex;flex:1;align-items:center;flex-wrap:wrap;gap:4px 16px;min-width:0;overflow-wrap:anywhere}.search-result-name{font-size:15px;font-weight:650}.search-result-status,.search-result-regions{color:#c6d9e5;font-size:12px}.search-result-actions{display:flex;align-items:center;gap:16px;flex:0 0 auto}.search-result-actions button{display:inline-flex;align-items:center;justify-content:center;height:44px;padding:0;border:0;background:transparent}.search-result-actions button:focus-visible,#toggle-search-result:focus-visible{outline:2px solid #63f3e5;outline-offset:1px}.country-edit{grid-column:2;display:flex;gap:8px;align-items:center;flex-wrap:wrap}.country-edit[hidden]{display:none}.country-edit button{min-height:44px;font-size:13px}
       .visited-country-section{box-sizing:border-box;display:flex;flex:1;flex-direction:column;min-height:0;overflow:hidden;border:1px solid #31516a;border-radius:11px;background:#112b3f;padding:12px}.visited-country-section .region-title{flex:none}.visited-country-list{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#37536a #112b3f;list-style:none;margin:12px 0 0;padding:0}.visited-country-list::-webkit-scrollbar{width:6px}.visited-country-list::-webkit-scrollbar-track{background:#112b3f}.visited-country-list::-webkit-scrollbar-thumb{border-radius:3px;background:#37536a}.visited-country-item{border-top:1px solid #27445c;font-size:13px;line-height:1.4;transition:background-color .15s ease}.visited-country-item:hover{background:#142d40}.visited-country-item.selected,.visited-subdivision-list li.selected{background:#18374b}.visited-country-row{display:flex;align-items:center;gap:4px;min-width:0;min-height:44px}.visited-country-list .country-link{display:flex;flex:1;align-items:center;gap:8px;min-width:0;min-height:44px;padding:2px 0;border:0;border-radius:0;background:transparent;color:inherit;text-align:left;font-size:inherit;transition:color .15s ease}.visited-country-list .country-link:hover{color:#63f3e5}.visited-country-list .country-link img{display:block;flex:0 0 24px;width:24px;height:18px;object-fit:contain}.visited-country-list .country-name{min-width:0;overflow-wrap:anywhere}.country-actions{display:flex;align-items:center;gap:2px}.region-link,.remove-country-visit{display:inline-flex;flex:0 0 44px;align-items:center;justify-content:center;width:44px;height:44px;padding:0;border:0;border-radius:0;background:transparent;color:#9bb4c8;transition:background-color .15s ease,color .15s ease,border-color .15s ease}.region-link:hover{background:#203a51;color:#63f3e5}.region-link ha-icon{--mdc-icon-size:20px}.remove-country-visit{font-size:20px;line-height:1}.remove-country-visit:hover{background:#203a51;color:#ffb6ae}.remove-country-visit:focus-visible,.region-link:focus-visible,.visited-country-list .country-link:focus-visible,.visited-subdivision-list .location-select:focus-visible{outline:2px solid #63f3e5;outline-offset:-2px}.remove-country-visit:disabled{cursor:default;opacity:.5}.visited-subdivision-list{list-style:none;margin:0 0 6px;padding:0 0 0 32px}.visited-subdivision-list li{min-height:36px;border-top:1px solid #203c52;font-size:12px}.visited-subdivision-list li.selected{background:#18374b}.location-select{display:block;width:100%;min-height:36px;padding:4px 0;border:0;border-radius:0;background:transparent;color:inherit;text-align:left;font:inherit;transition:color .15s ease}.location-select:hover{color:#63f3e5}.visited-country-empty{flex:1;margin:10px 0 0}
@@ -816,7 +888,7 @@ class VisitedCountriesCard extends HTMLElement {
       @media(max-width:620px){.settings-grid{grid-template-columns:minmax(0,1fr)}.regional-card{grid-column:auto}.settings-view{padding-top:0}.dialog-content{padding:16px}}
       .vc{overflow:visible}.search-row{position:relative;z-index:2}.map-layout{position:relative;z-index:1}.country-suggestions-panel{position:absolute;z-index:10;top:64px;left:0;right:0;display:flex;flex-direction:column;max-height:264px;overflow:hidden;border:1px solid #37536a;border-radius:8px;background:#112b3f;box-shadow:0 6px 16px #0006}.country-suggestions-panel[hidden]{display:none}.country-suggestions{position:static;flex:0 1 auto;min-height:0;max-height:none;overflow:auto;border:0;border-radius:0;background:transparent;box-shadow:none}.country-suggestions li{box-sizing:border-box;min-height:36px;padding:6px 10px;gap:8px}.country-suggestion-info{display:flex;flex-direction:column;gap:2px;min-width:0}.country-suggestion-info small{color:#9bb4c8;font-size:11px;line-height:1.2}.country-search-status{position:static;flex:none;padding:10px 12px}.country-search-footnote{flex:none;margin:0;padding:8px 10px;border-top:1px solid #27445c;color:#9bb4c8;font-size:11px;line-height:1.4}.country-search-footnote[hidden]{display:none}
       .country-suggestions-panel{max-height:320px}.country-suggestions{max-height:162px}.country-suggestions.outside-continent{max-height:216px}.country-suggestions.outside-continent li{min-height:48px}
-      .search-row{grid-template-columns:clamp(300px,26%,360px) minmax(0,1fr);min-height:56px;align-items:stretch}.country-search{height:auto;min-height:56px}.country-search input{height:100%;min-height:56px;background:#102538}.country-search>ha-icon{top:50%;transform:translateY(-50%)}.country-suggestions-panel{top:calc(100% + 4px)}
+      .search-row{grid-template-columns:clamp(300px,26%,360px) minmax(0,1fr) max-content;min-height:56px;align-items:stretch}.search-row>.search-result{grid-column:2;grid-row:1}.view-controls{overflow-y:auto;overscroll-behavior:contain}.country-search{height:auto;min-height:56px}.country-search input{height:100%;min-height:56px;background:#102538}.country-search>ha-icon{top:50%;transform:translateY(-50%)}.country-suggestions-panel{top:calc(100% + 4px)}
       .search-result{position:relative;min-height:56px;padding:5px 10px;border:1px solid #3b6474}.search-result img{width:24px;height:18px}.search-result-info{flex:0 1 auto;gap:6px 12px}.search-result-name{font-size:16px;font-weight:650;line-height:1.35;color:#fff}.search-result-status,.search-result-regions{color:#a8c0d0;font-size:12px}.search-result-identity{display:flex;align-items:center;min-width:0}
       .search-result-identity.region-identity{flex-wrap:wrap;gap:4px 6px}.search-result-country{color:#a8c0d0;font-size:12px;line-height:1.3}.search-result-separator{--mdc-icon-size:16px;display:inline-flex;flex:none;width:16px;height:16px;color:#a8c0d0}
       .search-result-visitors{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;min-width:0}.visitor-label{white-space:nowrap}.visitor-bubbles{display:flex;align-items:center;flex-wrap:wrap;gap:6px;min-width:0;max-width:100%}.traveller-bubble{box-sizing:border-box;display:inline-flex;flex:0 0 30px;align-items:center;justify-content:center;width:30px;height:30px;border:1px solid #ffffff50;border-radius:50%;background:#1c6b7b;color:#fff;font-size:11px;font-weight:700;line-height:1;letter-spacing:0;box-shadow:inset 0 1px 0 #ffffff20}.traveller-bubble.tone-1{background:#216d5b}.traveller-bubble.tone-2{background:#355d9b}.traveller-bubble.tone-3{background:#93455f}.traveller-bubble.tone-4{background:#835b21}
@@ -840,7 +912,7 @@ class VisitedCountriesCard extends HTMLElement {
       .search-result-actions #toggle-search-result.primary:hover:not(:disabled){background:#134a57;border-color:#7ce8df}
       .search-result-actions #toggle-search-result:focus-visible{outline:2px solid #63f3e5;outline-offset:2px}.search-result-actions #toggle-search-result:active:not(:disabled){box-shadow:inset 0 1px 2px #0006}.search-result-actions #toggle-search-result:disabled{opacity:.5;cursor:default}
       @media(prefers-reduced-motion:reduce){.search-result-actions #toggle-search-result{transition:none}}
-      @media(max-width:760px){.search-row{grid-template-columns:minmax(0,1fr);gap:12px}.search-result{flex-wrap:wrap}.search-result-info{flex-basis:calc(100% - 60px)}.search-result-actions{margin-left:auto}.country-edit{grid-column:1}}
+      @media(max-width:760px){.search-row{grid-template-columns:minmax(0,1fr) max-content;gap:12px}.filters-anchor{grid-column:2}.search-row>.search-result{grid-column:1/-1;grid-row:2}.search-result{flex-wrap:wrap}.search-result-info{flex-basis:calc(100% - 60px)}.search-result-actions{margin-left:auto}.country-edit{grid-column:1}}
       @media(max-width:520px){.map-layout{grid-template-columns:minmax(0,1fr) 130px;gap:10px}.region-panel{padding-left:10px}.region-panel select{padding:8px 4px;font-size:12px}.view-controls{padding:8px}.region-panel .view-selector select{font-size:12px}.country-search{width:100%}.map{height:45vh;height:45dvh}.vc{padding:12px}.region-summary{padding:10px}}
     </style><div class="vc">
     <div id="vc-settings" class="settings-view${this.settingsOpen?'':' hidden'}" role="region" aria-labelledby="vc-settings-title"><h2 id="vc-settings-title">Settings</h2><div class="settings-grid">
@@ -849,20 +921,29 @@ class VisitedCountriesCard extends HTMLElement {
       ${this.mapDetailSettings()}</div>${this.error?`<div class="error" role="alert">${this.esc(this.error)}</div>`:''}</div>
     ${this.dialogMarkup(data)}
     <div id="map-view" class="map-view${this.settingsOpen?' hidden':''}">
-    <div class="search-row">
+    <div class="search-row"><div class="search-toolbar">
     <form id="country-search" class="country-search" aria-label="Find country"><ha-icon icon="mdi:magnify" aria-hidden="true"></ha-icon><input id="search" type="search" role="combobox" aria-autocomplete="list" aria-controls="country-suggestions" aria-expanded="false" aria-describedby="country-search-status" autocomplete="off" placeholder="Search countries&#8230;" aria-label="Search countries" value="${this.esc(this.searchQuery||'')}" ${this.geo?'':'disabled'}/><div id="country-suggestions-panel" class="country-suggestions-panel" hidden><p id="country-search-status" class="muted country-search-status" role="status"></p><ul id="country-suggestions" class="country-suggestions" role="listbox" aria-label="Countries" hidden></ul><p id="country-search-footnote" class="country-search-footnote" hidden></p></div></form>
+    </div>
     ${resultFeature?`<section class="search-result" aria-label="Selected ${resultRegion?'region':'country'}" aria-live="polite"><img src="https://flagcdn.com/w40/${this.flagCode(resultCode)}.png" alt="" width="24" height="18"/><div class="search-result-info"><span class="search-result-identity${resultRegion?' region-identity':''}">${resultRegion?`<span class="search-result-country">${this.esc(this.name(resultFeature))}</span><ha-icon class="search-result-separator" icon="mdi:chevron-right" aria-hidden="true"></ha-icon>`:''}<span class="search-result-name">${this.esc(resultRegion?resultRegion.name:this.name(resultFeature))}</span></span>${view.type!=='traveller'&&resultVisitors.length?`<span class="search-result-status search-result-visitors" role="group" aria-label="Visited by"><span class="visitor-label" aria-hidden="true">Visited by</span><span class="visitor-bubbles">${visibleResultVisitors.map(visitor=>this.travellerBubble(visitor)).join('')}${remainingResultVisitors.length?`<details class="visitor-disclosure visitor-overflow" name="country-visitors"><summary role="button" aria-expanded="false" aria-label="Show ${remainingResultVisitors.length} more travellers who visited" title="Show remaining visitor names"><span class="visitor-more" aria-hidden="true">+${remainingResultVisitors.length}</span></summary><ul class="visitor-popover" aria-label="Other travellers who visited">${remainingResultVisitors.map(visitor=>`<li>${this.esc(visitor.name)}</li>`).join('')}</ul></details>`:''}</span></span>`:view.type==='traveller'&&resultVisited&&!resultExplicit?'<span class="search-result-status">Visited via regions</span>':!editable&&!resultVisited?`<span class="search-result-status">${this.esc(this.visitStatus(resultLocation,view,visited,derivedCountries))}</span>`:''}${resultRegions.length?`<span class="search-result-regions">${resultRegions.filter(region=>visited.has(region.code)).length} of ${resultRegions.length} regions visited</span>`:''}</div><div class="search-result-actions">${editable&&(!resultVisited||resultExplicit)?`<button id="toggle-search-result" class="${resultExplicit?'secondary':'primary'}" type="button" ${this._pendingChanges?'disabled':''}><ha-icon icon="mdi:${resultExplicit?'minus':'check'}-circle-outline" aria-hidden="true"></ha-icon><span>${resultExplicit?'Mark unvisited':'Mark visited'}</span></button>`:''}<button id="close-country" type="button" title="Deselect ${resultRegion?'region':'country'}" aria-label="Deselect ${resultRegion?'region':'country'}"><ha-icon icon="mdi:close" aria-hidden="true"></ha-icon></button></div></section>`:''}
+    <div class="filters-anchor"><button id="filters-toggle" class="filters-toggle" type="button" aria-expanded="${!!this.filtersOpen}" aria-controls="map-filters"><ha-icon icon="mdi:tune" aria-hidden="true"></ha-icon><span>Filters</span></button>${filters}</div>
     </div><div class="map-layout"><div class="map-column"><div class="map">${this.geo?`<svg viewBox="${bounds}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" role="group" tabindex="0" aria-label="Interactive ${this.esc(this.continent)} map">${shapes}${subdivisionShapes}</svg><div class="map-zoom-controls" role="group" aria-label="Map zoom"><button id="map-zoom-in" type="button" aria-label="Zoom in" title="Zoom in"><ha-icon icon="mdi:plus" aria-hidden="true"></ha-icon></button><button id="map-zoom-out" type="button" aria-label="Zoom out" title="Zoom out"><ha-icon icon="mdi:minus" aria-hidden="true"></ha-icon></button><button id="map-zoom-reset" type="button" aria-label="Reset map zoom" title="Reset map zoom"><ha-icon icon="mdi:restore" aria-hidden="true"></ha-icon></button></div>`:'<p class="muted" style="padding:20px">Loading mapâ€¦ Internet access is required to load country outlines.</p>'}</div></div>
-    <aside class="region-panel" aria-label="Visited countries sidebar"><section class="view-controls" aria-labelledby="view-heading"><h2 id="view-heading" class="view-heading">Map Filters</h2><div class="view-control-row"><div class="view-selector"><ha-icon icon="mdi:account-multiple-outline" aria-hidden="true"></ha-icon><select id="view" aria-label="Travellers / Groups">${options}</select></div>${editable?'<span class="view-editable">Editable</span>':''}</div><div class="view-control-row"><div class="view-selector"><ha-icon icon="mdi:web" aria-hidden="true"></ha-icon><select id="continent" aria-label="Continent">${continentOptions}</select></div></div></section>
+    <aside class="region-panel" aria-label="Visited countries sidebar">
     <section class="visited-country-section" aria-label="Visited countries"><h2 class="sidebar-heading">Visited countries <span class="country-count">(${menuCountries.length})</span></h2><hr class="visited-country-divider" aria-hidden="true"/>${menuCountries.length?`<ul class="visited-country-list" aria-label="Visited countries">${menuCountries.map(country=>{const regions=this.regionsFor(country.code);const visitedRegions=regions.filter(region=>visited.has(region.code));const expandable=this.subdivisionTrackingEnabled(country.code)&&visitedRegions.length>0;const expanded=expandable&&this.expandedCountries.has(country.code);const canRemove=this.canEdit()&&view.type==='traveller'&&visited.has(country.code);return `<li class="visited-country-item${this.selectedLocation===country.code||this.parentCountry(this.selectedLocation)===country.code?' selected':''}" data-country-item="${this.esc(country.code)}"><div class="visited-country-row"><button type="button" data-location-select="${this.esc(country.code)}" class="country-link" aria-current="${this.selectedLocation===country.code}"><img src="https://flagcdn.com/w40/${this.flagCode(country.code)}.png" alt="" width="24" height="18" loading="lazy"/><span class="country-name">${this.esc(country.name)}</span></button><span class="country-actions">${expandable?`<button type="button" data-region-toggle="${this.esc(country.code)}" class="region-link" aria-expanded="${expanded}" aria-label="${expanded?'Collapse':'Expand'} visited regions in ${this.esc(country.name)}"><ha-icon icon="mdi:chevron-${expanded?'down':'right'}" aria-hidden="true"></ha-icon></button>`:''}${canRemove?`<button type="button" data-remove-country="${this.esc(country.code)}" class="remove-country-visit" aria-label="Remove country-only visit to ${this.esc(country.name)}" title="Remove country-only visit"${this._pendingChanges?' disabled':''}>&times;</button>`:''}</span></div>${expanded?`<ul id="visited-${this.esc(country.code)}" class="visited-subdivision-list" aria-label="Visited regions in ${this.esc(country.name)}">${visitedRegions.map(region=>`<li${this.selectedLocation===region.code?' class="selected"':''}><button type="button" class="location-select" data-location-select="${this.esc(region.code)}" aria-current="${this.selectedLocation===region.code}">${this.esc(region.name)}</button></li>`).join('')}</ul>`:''}</li>`;}).join('')}</ul>`:`<p class="muted visited-country-empty" role="status">${this.data?'No countries visited yet.':'Loading countries...'}</p>`}</section>
     </aside>
     </div>
     ${this.error?`<div class="error" role="alert">${this.esc(this.error)}</div>`:''}
     </div></div></ha-card>`;
+    this.querySelector('#filters-toggle').onclick=()=>this.setFiltersOpen(!this.filtersOpen);
     const viewSelect=this.querySelector('#view');
     if(viewSelect)viewSelect.onchange=e=>{this.selection=e.target.value;this.resetRegionExpansion();this.scheduleRender();};
     const continentSelect=this.querySelector('#continent');
     if(continentSelect)continentSelect.onchange=e=>{this.continent=e.target.value;this.resetRegionExpansion();this.scheduleRender();};
+    this.querySelectorAll('[data-visit-mode]').forEach(button=>{
+      button.onclick=()=>{
+        this.groupVisitMode=button.dataset.visitMode;
+        this.scheduleRender();
+      };
+    });
     const mapSvg=this.querySelector('.map svg');
     if(mapSvg) {
       this.updateMapViewport();
@@ -1011,6 +1092,11 @@ class VisitedCountriesCard extends HTMLElement {
     if (focusedLocation) this.querySelector(`[data-location="${focusedLocation}"]`)?.focus({preventScroll:true});
     if(visitFocused)(this.querySelector('#toggle-search-result')||this.querySelector('#close-country'))?.focus({preventScroll:true});
     if(searchFocused)searchInput.focus({preventScroll:true});
+    if(this.filtersOpen) {
+      this.positionFilters();
+      if(focusedFilterId)this.querySelector(`#${focusedFilterId}`)?.focus({preventScroll:true});
+      else if(focusedVisitMode)this.querySelector(`[data-visit-mode="${focusedVisitMode}"]`)?.focus({preventScroll:true});
+    }
     this.updateSearch();
   }
   clickCountry(feature) {

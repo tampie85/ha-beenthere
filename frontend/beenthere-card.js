@@ -5,7 +5,7 @@ const MAP_SOURCES = Object.freeze({
 const TERRITORY_CODES = Object.freeze({NJM:'SJ'});
 const COUNTRY_NAME_OVERRIDES = Object.freeze({AU:'Australia'});
 const EUROPE_VIEW_WEST = -25;
-const EUROPE_VIEW_EAST = 40;
+const EUROPE_VIEW_EAST = 72;
 const CONTINENTS = Object.freeze(['Africa','Antarctica','Asia','Europe','North America','Oceania','South America']);
 const DEFAULT_DATA = Object.freeze({travellers:{},groups:{}});
 const GEOGRAPHY_URL = '/beenthere/geography.json?v=1';
@@ -465,7 +465,7 @@ class VisitedCountriesCard extends HTMLElement {
     for(const feature of this.geo?.features||[]) {
       const code=this.iso(feature);
       if(code&&this.name(feature).toLocaleLowerCase().includes(query)) {
-        if(this.continent==='World'||feature.properties?.CONTINENT===this.continent)countries.set(code,feature);
+        if(this.featureInContinent(feature))countries.set(code,feature);
         else outsideCountries.set(code,feature);
       }
     }
@@ -532,7 +532,11 @@ class VisitedCountriesCard extends HTMLElement {
     }
     return names;
   }
-  visibleFeatures() {return (this.geo?.features||[]).filter(feature=>this.continent==='World'||feature.properties?.CONTINENT===this.continent);}
+  featureInContinent(feature) {
+    return this.continent==='World'||feature.properties?.CONTINENT===this.continent
+      ||(this.iso(feature)==='RU'&&(this.continent==='Europe'||this.continent==='Asia'));
+  }
+  visibleFeatures() {return (this.geo?.features||[]).filter(feature=>this.featureInContinent(feature));}
   xy(pt) {
     const centers={'Africa':20,'Antarctica':0,'Asia':100,'Europe':20,'North America':-100,'Oceania':160,'South America':-60};
     const center=centers[this.continent];

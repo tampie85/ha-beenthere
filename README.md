@@ -56,7 +56,8 @@ explicit visit or any region visit. The region list and `visited_subdivisions`
 remain exact and are unaffected by country-level visits. Unknown historical
 IDs are retained but never used to infer parent visits.
 
-The main traveller/group selector and continent filter control the map. The
+The main traveller/group selector and continent filter control the map. Russia
+appears in both the Europe and Asia maps and their country searches. The
 sidebar lists unique visited countries alphabetically, including countries
 visited through regions, and shows the count. Selecting a country only highlights
 it on the map. Administrators can remove an explicit country-only visit from

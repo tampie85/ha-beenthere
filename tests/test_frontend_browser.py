@@ -902,6 +902,47 @@ class PanelBrowserTests(unittest.TestCase):
         self.assertEqual(self.page.evaluate("wsMessages.filter(message=>message.type==='beenthere/change').length"), 0)
         self.assertEqual(self.errors, [])
 
+    def test_russia_is_visible_and_searchable_in_europe_and_asia(self):
+        self.open_panels()
+        panel = self.page.locator("beenthere-panel")
+        self.page.evaluate("""()=>{
+            renderer(0).geo.features.push({
+                properties:{ISO_A2_EH:'RU',ADMIN:'Russia',CONTINENT:'Europe'},
+                geometry:{type:'MultiPolygon',coordinates:[
+                    [[[20,54],[70,54],[70,81],[20,54]]],
+                    [[[170,60],[179,60],[179,70],[170,60]]],
+                    [[[-180,60],[-169,60],[-169,70],[-180,60]]]
+                ]}
+            });
+        }""")
+        for continent, points in (
+            ("Europe", [[20, 54], [70, 81]]),
+            ("Asia", [[70, 81], [179, 70], [-169, 60]]),
+        ):
+            with self.subTest(continent=continent):
+                panel.locator("#continent").select_option(continent)
+                self.page.wait_for_function("!renderer(0)._renderScheduled")
+                self.assertEqual(panel.locator('[data-country-shape="RU"]').count(), 1)
+                self.assertTrue(self.page.evaluate("""points=>{
+                    const card=renderer(0);
+                    const [x,y,width,height]=card.mapBounds(card.visibleFeatures()).split(' ').map(Number);
+                    return points.every(point=>{
+                        const [px,py]=card.xy(point);
+                        return px>=x && px<=x+width && py>=y && py<=y+height;
+                    });
+                }""", points))
+                search = panel.locator("#search")
+                search.fill("Russia")
+                self.assertEqual(panel.locator("#country-search-status").inner_text(), "")
+                panel.get_by_role("option", name="Russia", exact=True).click()
+                self.page.wait_for_function(
+                    "continent=>renderer(0).selectedLocation==='RU' && "
+                    "renderer(0).continent===continent && !renderer(0)._renderScheduled",
+                    arg=continent,
+                )
+                self.assertEqual(panel.locator('[data-country-shape="RU"]').get_attribute("aria-current"), "true")
+        self.assertEqual(self.errors, [])
+
     def test_country_search_footnote_stays_visible_when_results_scroll(self):
         self.open_panels()
         panel = self.page.locator("beenthere-panel")

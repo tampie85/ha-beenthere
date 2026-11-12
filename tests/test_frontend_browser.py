@@ -869,6 +869,24 @@ class PanelBrowserTests(unittest.TestCase):
         panel.locator("#view").select_option("g:family")
         panel.locator("#continent").select_option("Europe")
         search.fill("aUs")
+        self.assertEqual(panel.locator("#country-suggestions").get_by_role("option").count(), 0)
+        self.assertEqual(panel.locator("#country-search-status").inner_text(), "No matching countries")
+        all_continents = panel.get_by_role("button", name="Search all continents instead", exact=True)
+        self.assertTrue(all_continents.is_visible())
+        self.assertEqual(all_continents.evaluate("(button)=>getComputedStyle(button).borderWidth"), "0px")
+        all_continents.click()
+        self.assertEqual(panel.locator("#country-suggestions").get_by_role("option").inner_text(), "Australia")
+        self.assertEqual(self.page.evaluate("renderer(0).continent"), "Europe")
+        self.assertTrue(self.page.evaluate("""()=>{
+            const list=renderer(0).querySelector('#country-suggestions');
+            const map=renderer(0).querySelector('.map');
+            const searchRow=renderer(0).querySelector('.search-row');
+            const mapLayout=renderer(0).querySelector('.map-layout');
+            const rect=list.getBoundingClientRect();
+            return getComputedStyle(renderer(0).querySelector('.vc')).overflow==='visible'
+                && rect.bottom>map.getBoundingClientRect().top
+                && Number(getComputedStyle(searchRow).zIndex)>Number(getComputedStyle(mapLayout).zIndex);
+        }"""))
         panel.get_by_role("option", name="Australia", exact=True).click()
         self.page.wait_for_function("renderer(0).selectedLocation==='AU' && renderer(0).continent==='World' && renderer(0).querySelector('.search-result-name')?.textContent==='Australia'")
         self.assertEqual(panel.locator(".search-result-name").inner_text(), "Australia")

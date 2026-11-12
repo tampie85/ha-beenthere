@@ -67,6 +67,14 @@ class FrontendTests(unittest.TestCase):
         self.assertIn('/beenthere/maps/GB.geojson', self.context.eval('failure'))
         self.assertIn('restart Home Assistant', self.context.eval('failure'))
 
+    def test_prepare_map_normalizes_continent_capitalization(self):
+        self.context.eval("""
+            const map=card.prepareMap({features:[{properties:{
+                ISO_A2_EH:'FR',ADMIN:'France',CONTINENT:'europe'
+            }}]});
+        """)
+        self.assertEqual(self.context.eval("map.features[0].properties.CONTINENT"), "Europe")
+
     def drain_jobs(self):
         while self.context.execute_pending_job():
             pass

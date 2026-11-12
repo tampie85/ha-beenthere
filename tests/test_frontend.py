@@ -331,6 +331,17 @@ class FrontendTests(unittest.TestCase):
         self.assertEqual(self.context.eval("card.visitStatus('US')"), "Visited")
         self.assertEqual(self.context.eval("card.visitStatus('US-CA')"), "Not visited")
 
+    def test_unvisited_status_uses_combined_view_wording(self):
+        self.context.eval("card.data.groups.family={name:'Family',members:['alice']};")
+        for selection, expected in (
+            ("", "No visits recorded"),
+            ("g:family", "No visits recorded"),
+            ("t:alice", "Not visited"),
+        ):
+            with self.subTest(selection=selection):
+                self.context.eval(f"card.selection='{selection}';")
+                self.assertEqual(self.context.eval("card.visitStatus('US-FL')"), expected)
+
     def test_group_and_non_admin_region_writes_are_blocked(self):
         self.context.eval("card.setLocationVisit('US-CA',false);")
         self.drain_jobs()

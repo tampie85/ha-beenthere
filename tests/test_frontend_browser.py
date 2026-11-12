@@ -1075,8 +1075,10 @@ class PanelBrowserTests(unittest.TestCase):
                 self.assertLessEqual(search['width'], 360)
                 self.assertEqual(search['height'], box['height'])
                 self.assertEqual(search['y'], box['y'])
-                self.assertEqual(banner.locator('img').bounding_box()['width'], 34)
-                self.assertEqual(banner.locator('img').bounding_box()['height'], 25.5)
+                flag = banner.locator('img').bounding_box()
+                sidebar_flag = panel.locator('[data-country-item="FR"] .country-link img').bounding_box()
+                self.assertEqual((flag['width'], flag['height']), (24, 18))
+                self.assertEqual((flag['width'], flag['height']), (sidebar_flag['width'], sidebar_flag['height']))
                 self.assertEqual(banner.locator('.search-result-name').evaluate("element=>[getComputedStyle(element).fontSize,getComputedStyle(element).fontWeight,getComputedStyle(element).color]"), ['16px', '650', 'rgb(255, 255, 255)'])
                 self.assertEqual(banner.locator('.visitor-label').evaluate("element=>[getComputedStyle(element).fontSize,getComputedStyle(element).color]"), ['12px', 'rgb(168, 192, 208)'])
                 border = banner.evaluate('element=>{const style=getComputedStyle(element);return [style.borderLeftWidth,style.borderTopWidth,style.borderLeftColor,style.borderTopColor];}')
@@ -1088,7 +1090,9 @@ class PanelBrowserTests(unittest.TestCase):
                 visitors = banner.locator('.search-result-visitors').bounding_box()
                 self.assertGreaterEqual(visitors['x'], identity['x'] + identity['width'])
                 self.assertEqual(visitors['x'] - identity['x'] - identity['width'], 12)
-                self.assertEqual(banner.locator('.search-result-visitors').evaluate("element=>getComputedStyle(element).paddingLeft"), '12px')
+                visitor_label = banner.locator('.visitor-label').bounding_box()
+                self.assertEqual(identity['x'] - flag['x'] - flag['width'], 12)
+                self.assertEqual(visitor_label['x'] - identity['x'] - identity['width'], 12)
                 close = banner.locator('#close-country').bounding_box()
                 self.assertLessEqual(box['x'] + box['width'] - close['x'] - close['width'], 12)
                 sidebar_selection = panel.locator('[data-country-item="FR"]')
@@ -1128,6 +1132,7 @@ class PanelBrowserTests(unittest.TestCase):
     def test_country_banner_combined_views_show_one_unvisited_status(self):
         self.open_panels()
         panel = self.page.locator('beenthere-panel')
+        self.page.wait_for_function("!!renderer(0).querySelector('[data-location=\"GB-ENG\"]')")
         before = self.page.evaluate('JSON.stringify(snapshot.travellers)')
         for width in (1440, 375):
             for selection in ('', 'g:family'):
@@ -1138,8 +1143,22 @@ class PanelBrowserTests(unittest.TestCase):
                     panel.get_by_role('option', name='Australia', exact=True).click()
                     self.page.wait_for_function("renderer(0).querySelector('.search-result-name')?.textContent==='Australia'")
                     banner = panel.locator('.search-result')
-                    self.assertEqual(banner.get_by_text('Not visited', exact=True).count(), 1)
-                    self.assertEqual(banner.locator('.search-result-status').inner_text(), 'Not visited')
+                    self.assertEqual(banner.get_by_text('No visits recorded', exact=True).count(), 1)
+                    self.assertEqual(banner.locator('.search-result-status').inner_text(), 'No visits recorded')
+                    if width == 1440:
+                        flag = banner.locator('img').bounding_box()
+                        name = banner.locator('.search-result-name').bounding_box()
+                        status = banner.locator('.search-result-status').bounding_box()
+                        self.assertEqual(name['x'] - flag['x'] - flag['width'], 12)
+                        self.assertEqual(status['x'] - name['x'] - name['width'], 12)
+                    self.assertEqual(
+                        panel.locator('[data-country-shape="AU"] title').text_content(),
+                        'Australia: No visits recorded',
+                    )
+                    self.assertEqual(
+                        panel.locator('[data-location="GB-ENG"] title').text_content(),
+                        'England: No visits recorded',
+                    )
                     self.assertEqual(banner.locator('#toggle-search-result').count(), 0)
                     self.assertTrue(banner.get_by_role('button', name='Deselect country', exact=True).is_visible())
                     self.assertTrue(self.page.evaluate('document.documentElement.scrollWidth<=innerWidth'))
@@ -1255,7 +1274,7 @@ class PanelBrowserTests(unittest.TestCase):
                     self.assertEqual(banner.locator('#toggle-search-result').count(), 0)
                     self.assertEqual(banner.locator('.search-result-regions').inner_text(), f'{int(count > 0)} of 51 regions visited')
                     if not count:
-                        self.assertEqual(banner.get_by_text('Not visited', exact=True).count(), 1)
+                        self.assertEqual(banner.get_by_text('No visits recorded', exact=True).count(), 1)
                         continue
                     box = banner.bounding_box()
                     map_box = panel.locator('.map').bounding_box()
@@ -1350,6 +1369,16 @@ class PanelBrowserTests(unittest.TestCase):
         self.assertEqual(panel.locator("#toggle-search-result").count(), 0)
         panel.get_by_role("button", name="Deselect country", exact=True).tap()
         self.assertEqual(panel.locator(".search-result").count(), 0)
+        search.fill("Australia")
+        panel.get_by_role("option", name="Australia", exact=True).tap()
+        self.page.wait_for_function("renderer(0).querySelector('.search-result-name')?.textContent==='Australia'")
+        self.assertEqual(panel.locator(".search-result-status").inner_text(), "Not visited")
+        self.assertEqual(
+            panel.locator('[data-country-shape="AU"] title').text_content(),
+            "Australia: Not visited",
+        )
+        self.page.wait_for_function("!!renderer(0).querySelector('[data-location=\"GB-ENG\"]')")
+        self.assertEqual(panel.locator('[data-location="GB-ENG"] title').text_content(), "England: Not visited")
         self.assertEqual(self.page.evaluate("JSON.stringify(snapshot.travellers)===originalHistory"), True)
         self.assertEqual(self.errors, [])
 

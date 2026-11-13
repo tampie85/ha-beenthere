@@ -358,6 +358,44 @@ class PanelBrowserTests(unittest.TestCase):
         self.assertEqual(panel.locator('[data-remove-country]').count(), 0)
         self.assertEqual(self.errors, [])
 
+    def test_filters_button_border_reflects_open_or_active_filters(self):
+        self.open_panels()
+        panel = self.page.locator("beenthere-panel")
+        button = panel.get_by_role("button", name="Filters", exact=True)
+        muted = panel.locator("#search").evaluate("element=>getComputedStyle(element).borderTopColor")
+        teal = "rgb(99, 243, 229)"
+
+        def border_color():
+            return button.evaluate("element=>getComputedStyle(element).borderTopColor")
+
+        button.hover()
+        self.assertEqual(border_color(), muted)
+        button.click()
+        self.assertEqual(border_color(), teal)
+        button.click()
+        self.assertEqual(border_color(), muted)
+        for selector, value, expected in (
+            ("#continent", "Europe", teal),
+            ("#continent", "World", muted),
+            ("#view", "t:alice", teal),
+            ("#view", "", muted),
+        ):
+            self.select_filter(panel, selector, value)
+            self.assertEqual(border_color(), expected)
+        self.page.evaluate("""()=>{
+            snapshot.travellers.bob={name:'Bob',countries:[]};
+            renderer(0).data=JSON.parse(JSON.stringify(snapshot));
+            renderer(0).render();
+        }""")
+        for mode, expected in (("Everyone", teal), ("Anyone", muted)):
+            button.click()
+            panel.locator(f'[data-visit-mode="{mode}"]').click()
+            self.page.wait_for_function(
+                "mode=>renderer(0).groupVisitMode===mode && !renderer(0)._renderScheduled", arg=mode)
+            button.click()
+            self.assertEqual(border_color(), expected)
+        self.assertEqual(self.errors, [])
+
     def test_filters_popover_position_dismissal_and_filter_changes(self):
         self.open_panels()
         panel = self.page.locator("beenthere-panel")
@@ -380,9 +418,33 @@ class PanelBrowserTests(unittest.TestCase):
                 button.click()
                 self.assertTrue(popover.is_visible())
                 self.assertEqual(button.get_attribute("aria-expanded"), "true")
+                self.assertEqual(popover.locator(".filter-label").all_text_contents(),
+                                 ["Travellers", "Visited by:", "Continent"])
+                traveller = popover.get_by_role("combobox", name="Travellers", exact=True)
+                continent = popover.get_by_role("combobox", name="Continent", exact=True)
+                comparison = popover.get_by_role("group", name="Visited by:", exact=True)
+                self.assertEqual(comparison.get_by_role("button").all_text_contents(), ["Any", "All"])
+                self.assertEqual(popover.locator("#group-visit-help").count(), 0)
+                self.assertEqual(comparison.get_by_role("button", name="Any", exact=True).get_attribute("title"),
+                                 "Visited by at least one traveller")
+                self.assertEqual(comparison.get_by_role("button", name="All", exact=True).get_attribute("title"),
+                                 "Visited by every selected traveller")
+                self.assertLess(traveller.bounding_box()["y"], comparison.bounding_box()["y"])
+                self.assertLess(comparison.bounding_box()["y"], continent.bounding_box()["y"])
+                self.assertEqual(popover.evaluate("""element=>{
+                    const fields=[...element.querySelectorAll('.filter-field')];
+                    return fields.slice(1).map((field,index)=>
+                        field.getBoundingClientRect().top-fields[index].getBoundingClientRect().bottom);
+                }"""), [6, 6])
+                for field in popover.locator(".filter-field").all():
+                    label = field.locator(".filter-label").bounding_box()
+                    self.assertAlmostEqual(label["y"] - field.bounding_box()["y"], 4)
+                    control = field.locator("select, .group-visit-segment-group").bounding_box()
+                    self.assertAlmostEqual(control["y"] - label["y"] - label["height"], 4)
                 anchor = button.bounding_box()
                 search = panel.locator("#search").bounding_box()
                 floating = popover.bounding_box()
+                self.assertLessEqual(floating["height"], 232)
                 self.assertGreater(anchor["x"], search["x"] + search["width"])
                 self.assertAlmostEqual(floating["x"] + floating["width"],
                                        anchor["x"] + anchor["width"], delta=1)
@@ -391,7 +453,10 @@ class PanelBrowserTests(unittest.TestCase):
                 self.assertGreaterEqual(floating["x"], 0)
                 self.assertEqual(panel.locator(".map").bounding_box(), map_before)
                 self.assertEqual(panel.locator(".visited-country-section").bounding_box(), sidebar_before)
-                self.assertAlmostEqual(sidebar_before["y"], map_before["y"], delta=1)
+                if width > 760:
+                    self.assertAlmostEqual(sidebar_before["y"], map_before["y"], delta=1)
+                else:
+                    self.assertGreaterEqual(sidebar_before["y"], map_before["y"] + map_before["height"])
                 self.assertAlmostEqual(sidebar_before["height"], map_before["height"], delta=1)
                 self.assertTrue(popover.evaluate("""element=>{
                     const rect=element.getBoundingClientRect();
@@ -471,6 +536,9 @@ class PanelBrowserTests(unittest.TestCase):
                     self.assertLess(selected["x"] + selected["width"], before["x"])
                 button.click()
                 floating = popover.bounding_box()
+                self.assertAlmostEqual(floating["width"], min(250, width - 24), delta=1)
+                for control in popover.locator("select, [data-visit-mode]").all():
+                    self.assertEqual(control.bounding_box()["height"], 36)
                 self.assertGreaterEqual(floating["x"], 12)
                 self.assertGreaterEqual(floating["y"], 12)
                 self.assertLessEqual(floating["x"] + floating["width"], width - 12)
@@ -518,7 +586,7 @@ class PanelBrowserTests(unittest.TestCase):
         panel = self.page.locator('beenthere-panel')
         panel.get_by_role('button', name='Filters', exact=True).click()
         card = panel.get_by_role('region', name='Map Filters', exact=True)
-        traveller = card.get_by_role('combobox', name='Travellers / Groups')
+        traveller = card.get_by_role('combobox', name='Travellers', exact=True)
         continent = card.get_by_role('combobox', name='Continent')
         for control in (traveller, continent):
             self.assertEqual(control.evaluate("element=>getComputedStyle(element).appearance"), 'none')
@@ -623,9 +691,12 @@ class PanelBrowserTests(unittest.TestCase):
             self.assertGreater(list_bounds["y"], divider_bounds["y"] + divider_bounds["height"])
             self.assertAlmostEqual(list_bounds["y"] + list_bounds["height"],
                                    card_bounds["y"] + card_bounds["height"] - 13)
-            self.assertAlmostEqual(card_bounds["y"], map_bounds["y"], delta=1)
-            self.assertAlmostEqual(card_bounds["y"] + card_bounds["height"], map_bounds["y"] + map_bounds["height"])
-            self.assertAlmostEqual(sidebar_bounds["y"] + sidebar_bounds["height"], map_bounds["y"] + map_bounds["height"])
+            self.assertAlmostEqual(card_bounds["height"], map_bounds["height"], delta=1)
+            self.assertAlmostEqual(sidebar_bounds["height"], map_bounds["height"], delta=1)
+            if width > 760:
+                self.assertAlmostEqual(card_bounds["y"], map_bounds["y"], delta=1)
+            else:
+                self.assertGreaterEqual(card_bounds["y"], map_bounds["y"] + map_bounds["height"])
             self.assertTrue(self.page.evaluate("document.documentElement.scrollWidth<=window.innerWidth"))
         self.assertEqual(self.errors, [])
 
@@ -1173,6 +1244,84 @@ class PanelBrowserTests(unittest.TestCase):
                 self.assertEqual(panel.locator('[data-country-shape="RU"]').get_attribute("aria-current"), "true")
         self.assertEqual(self.errors, [])
 
+    def test_map_sizes_to_bounds_for_world_and_every_continent(self):
+        self.open_panels()
+        panel = self.page.locator("beenthere-panel")
+        extents = [
+            ("Africa", "NG", -17, -35, 51, 37),
+            ("Antarctica", "AQ", -180, -90, 179.9, -60),
+            ("Asia", "JP", 30, -10, 179, 80),
+            ("Europe", "FR", -20, 35, 70, 81),
+            ("North America", "US", -169, 7, -52, 83),
+            ("Oceania", "AU", 110, -50, 179, 25),
+            ("South America", "BR", -81, -56, -35, 13),
+        ]
+        features = [
+            {"type": "Feature", "properties": {
+                "ISO_A2_EH": code, "ADMIN": continent, "CONTINENT": continent,
+            }, "geometry": {"type": "Polygon", "coordinates": [[
+                [west, south], [east, south], [east, north], [west, north], [west, south],
+            ]]}}
+            for continent, code, west, south, east, north in extents
+        ]
+        self.page.evaluate("""features=>{
+            const card=renderer(0);
+            card.geo=card.prepareMap({features});
+            card.data.map_settings.subdivision_countries=[];
+            card.render();
+        }""", features)
+        for width in (1440, 800, 390, 320):
+            self.page.set_viewport_size({"width": width, "height": 900})
+            for continent in ["World"] + [item[0] for item in extents]:
+                with self.subTest(width=width, continent=continent):
+                    self.select_filter(panel, "#continent", continent)
+                    self.page.wait_for_function("!renderer(0)._renderScheduled")
+                    sizing = self.page.evaluate("""()=>{
+                        const card=renderer(0);
+                        const svg=card.querySelector('.map svg');
+                        const [, , width, height]=card._mapBaseBounds;
+                        const bounds=svg.getBBox();
+                        const matrix=svg.getScreenCTM();
+                        return {
+                            ratio:Math.max(1.5,width/height),zoom:card._mapZoom,
+                            cornerInset:parseFloat(getComputedStyle(card.querySelector('.map'))
+                                .borderTopLeftRadius)*(1-1/Math.SQRT2),
+                            viewBox:svg.getAttribute('viewBox'),
+                            expected:card.mapBounds(card.visibleFeatures()),
+                            topLeft:new DOMPoint(bounds.x,bounds.y).matrixTransform(matrix).toJSON(),
+                            bottomRight:new DOMPoint(bounds.x+bounds.width,bounds.y+bounds.height)
+                                .matrixTransform(matrix).toJSON(),
+                        };
+                    }""")
+                    map_box = panel.locator(".map").bounding_box()
+                    column_box = panel.locator(".map-column").bounding_box()
+                    countries = panel.locator(".visited-country-section").bounding_box()
+                    self.assertAlmostEqual(map_box["width"], column_box["width"], delta=1)
+                    self.assertAlmostEqual(map_box["height"],
+                                           max(160, map_box["width"] / sizing["ratio"]), delta=1)
+                    self.assertLess(map_box["height"], map_box["width"])
+                    self.assertEqual(sizing["zoom"], 1)
+                    self.assertEqual(sizing["viewBox"], sizing["expected"])
+                    self.assertEqual(panel.locator(".map svg").get_attribute("preserveAspectRatio"),
+                                     "xMidYMid meet")
+                    inset = sizing["cornerInset"]
+                    self.assertGreaterEqual(sizing["topLeft"]["x"], map_box["x"] + inset)
+                    self.assertGreaterEqual(sizing["topLeft"]["y"], map_box["y"] + inset)
+                    self.assertLessEqual(sizing["bottomRight"]["x"], map_box["x"] + map_box["width"] - inset)
+                    self.assertLessEqual(sizing["bottomRight"]["y"], map_box["y"] + map_box["height"] - inset)
+                    self.assertAlmostEqual(countries["height"], map_box["height"], delta=1)
+                    if width > 760:
+                        self.assertAlmostEqual(countries["y"], map_box["y"], delta=1)
+                    else:
+                        self.assertAlmostEqual(map_box["width"], countries["width"], delta=1)
+                        self.assertGreaterEqual(countries["y"], map_box["y"] + map_box["height"])
+                    if continent == "World" and width > 760:
+                        self.assertAlmostEqual(map_box["width"] / map_box["height"], 2, delta=.01)
+                    for button in panel.locator(".map-zoom-controls button").all():
+                        box = button.bounding_box()
+                        self.assertLessEqual(box["y"] + box["height"], map_box["y"] + map_box["height"])
+        self.assertEqual(self.errors, [])
+
     def test_map_zoom_pan_reset_and_continent_change(self):
         self.open_panels()
         panel = self.page.locator("beenthere-panel")
@@ -1181,6 +1330,7 @@ class PanelBrowserTests(unittest.TestCase):
         zoom_out = panel.get_by_role("button", name="Zoom out", exact=True)
         reset = panel.get_by_role("button", name="Reset map zoom", exact=True)
         original = svg.get_attribute("viewBox")
+        original_map = panel.locator(".map").bounding_box()
         self.assertTrue(zoom_out.is_disabled())
         self.assertTrue(reset.is_disabled())
         zoom_in.click()
@@ -1193,6 +1343,9 @@ class PanelBrowserTests(unittest.TestCase):
         self.select_filter(panel, "#view", "g:family")
         self.page.wait_for_function("!renderer(0)._renderScheduled")
         self.assertNotEqual(svg.get_attribute("viewBox"), original)
+        zoomed_map = panel.locator(".map").bounding_box()
+        self.assertAlmostEqual(zoomed_map["width"], original_map["width"], delta=1)
+        self.assertAlmostEqual(zoomed_map["height"], original_map["height"], delta=1)
         reset.click()
         self.assertEqual(svg.get_attribute("viewBox"), original)
         zoom_in.click()

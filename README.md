@@ -26,6 +26,14 @@ Use the map controls to zoom in, zoom out, or reset the current continent's
 view. When zoomed in, drag the map or focus it and use the arrow keys to pan.
 Changing continents restores the default view.
 
+The map uses a width-driven landscape layout for the world and every continent,
+based on each view's SVG bounds rather than a fixed viewport height. Narrower
+continents use a minimum 3:2 container, and very wide views retain a minimum
+160px height for the map controls. The projection, geographic bounds and default
+zoom are unchanged; outlines are fitted without stretching or additional cropping.
+The visited-country panel matches the map's height. At widths of 760px and below,
+it moves beneath the full-width map and retains an independently scrolling list.
+
 ## Geographic model and regional tracking
 
 The backend has a shared geographic catalogue in `geography.json` and a
@@ -66,10 +74,15 @@ visited through regions, and shows the count. Selecting a country only highlight
 it on the map. Administrators can remove an explicit country-only visit from
 the sidebar after confirmation; this does not remove any regional history.
 The **Filters** button stays at the toolbar's right edge, with the selected-country
-banner between it and search on desktop. Its floating Map Filters popover stays
+banner between it and search on desktop. Its border matches Search when closed
+with default filters, and turns teal while open or when non-default filters
+are selected. Its floating Map Filters popover is
+250px wide (narrower on small screens), with 36px-tall dropdowns and 36px-tall
+comparison buttons and compact title/label spacing. It stays
 within the viewport, scrolling internally on short screens and opening above
-the button when there is more room there. It contains the existing traveller,
-continent and group comparison controls. Filter
+the button when there is more room there. Controls are ordered **Travellers**,
+**Visited by: Any / All** (for multi-traveller views), then **Continent**.
+The comparison buttons explain their meaning in tooltips. Filter
 changes keep it open; click the button again, click outside or press Escape to
 close it. An administrator's individual traveller view is marked as editable.
 The visited-country panel aligns with the map and fills its height. Its

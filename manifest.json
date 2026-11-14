@@ -1,9 +1,8 @@
 {
   "domain": "beenthere",
   "name": "BeenThere",
-  "version": "0.2.0",
-  "documentation": "https://github.com/tampie85/ha-beenthere",
-  "issue_tracker": "https://github.com/tampie85/ha-beenthere/issues",
+  "after_dependencies": ["lovelace"],
+  "codeowners": ["@tampie85"],
   "config_flow": true,
   "dependencies": [
     "http",
@@ -11,7 +10,9 @@
     "frontend",
     "panel_custom"
   ],
-  "codeowners": ["@tampie85"],
+  "documentation": "https://github.com/tampie85/ha-beenthere",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/tampie85/ha-beenthere/issues",
   "requirements": [],
-  "iot_class": "local_push"
+  "version": "0.2.0"
 }

@@ -46,6 +46,7 @@ jobs:
           mkdir -p custom_components/beenthere
           cp -a /tmp/beenthere-stage/custom_components/beenthere/. \
             custom_components/beenthere/
+          rm manifest.json
 
       - name: Run hassfest
         uses: home-assistant/actions/hassfest@master

@@ -1289,7 +1289,7 @@ class PanelBrowserTests(unittest.TestCase):
         self.open_panels()
         panel = self.page.locator("beenthere-panel")
         before = self.page.evaluate("JSON.stringify(snapshot.travellers)")
-        search = panel.get_by_role("combobox", name="Search countries", exact=True)
+        search = panel.get_by_role("combobox", name="Search countries or regions", exact=True)
         self.assertEqual(panel.locator("#find").count(), 0)
         self.assertEqual(panel.locator(".search-result").count(), 0)
         search.fill("a")
@@ -2077,7 +2077,7 @@ class PanelBrowserTests(unittest.TestCase):
         self.open_panels(admin=False)
         panel = self.page.locator("beenthere-panel")
         self.select_filter(panel, "#view", "t:alice")
-        search = panel.get_by_role("combobox", name="Search countries", exact=True)
+        search = panel.get_by_role("combobox", name="Search countries or regions", exact=True)
         search.fill("fra")
         panel.get_by_role("option", name="France", exact=True).tap()
         self.page.wait_for_function("renderer(0).querySelector('.search-result-name')?.textContent==='France'")
@@ -2524,4 +2524,109 @@ class PanelBrowserTests(unittest.TestCase):
                 "false",
             )
         self.assertEqual(self.page.evaluate("JSON.stringify(snapshot.travellers.alice.countries)"), '["US-CA","GB-ENG"]')
+        self.assertEqual(self.errors, [])
+
+    def test_region_search_returns_enabled_regions_by_name(self):
+        self.open_panels()
+        panel = self.page.locator("beenthere-panel")
+        search = panel.get_by_role("combobox", name="Search countries or regions", exact=True)
+        search.fill("california")
+        results = panel.locator("#country-suggestions").get_by_role("option")
+        self.assertEqual(results.count(), 1)
+        self.assertIn("California", results.first.inner_text())
+        self.assertIn("United States", results.first.inner_text())
+        self.assertEqual(self.errors, [])
+
+    def test_region_search_filters_by_regional_tracking_enabled(self):
+        self.open_panels()
+        panel = self.page.locator("beenthere-panel")
+        self.page.evaluate("""
+            const card=renderer(0);
+            card.data={
+                travellers:{alice:{name:'Alice',countries:[]}},
+                map_settings:{subdivision_countries:['GB']}
+            };
+            card.render();
+        """)
+        search = panel.get_by_role("combobox", name="Search countries or regions", exact=True)
+        search.fill("california")
+        self.assertEqual(panel.locator("#country-suggestions").get_by_role("option").count(), 0)
+        self.assertEqual(self.errors, [])
+
+    def test_region_search_includes_both_visited_and_unvisited_regions(self):
+        self.open_panels()
+        panel = self.page.locator("beenthere-panel")
+        self.page.evaluate("""
+            const card=renderer(0);
+            snapshot.travellers.alice.countries=['US-CA'];
+            snapshot.map_settings.subdivision_countries=['US'];
+            card.data=JSON.parse(JSON.stringify(snapshot));
+            card.render();
+        """)
+        search = panel.get_by_role("combobox", name="Search countries or regions", exact=True)
+        search.fill("a")
+        results = panel.locator("#country-suggestions").get_by_role("option")
+        option_texts = [results.nth(i).inner_text() for i in range(min(results.count(), 10))]
+        self.assertTrue(any("California" in text for text in option_texts))
+        self.assertTrue(any("Texas" in text for text in option_texts))
+        self.assertEqual(self.errors, [])
+
+    def test_region_search_respects_continent_filter(self):
+        self.open_panels()
+        panel = self.page.locator("beenthere-panel")
+        panel.get_by_role("button", name="Filters", exact=True).click()
+        self.select_filter(panel, "#continent", "North America")
+        search = panel.get_by_role("combobox", name="Search countries or regions", exact=True)
+        search.fill("a")
+        results = panel.locator("#country-suggestions").get_by_role("option")
+        self.assertGreater(results.count(), 0)
+        for i in range(results.count()):
+            text = results.nth(i).inner_text()
+            self.assertTrue(any(continent in text for continent in ["", "North America"]))
+        self.assertEqual(self.errors, [])
+
+    def test_region_search_sorting_by_relevance(self):
+        self.open_panels()
+        panel = self.page.locator("beenthere-panel")
+        search = panel.get_by_role("combobox", name="Search countries or regions", exact=True)
+        search.fill("california")
+        results = panel.locator("#country-suggestions").get_by_role("option")
+        first_result = results.first.inner_text()
+        self.assertIn("California", first_result)
+        self.assertEqual(self.errors, [])
+
+    def test_region_search_no_duplicates(self):
+        self.open_panels()
+        panel = self.page.locator("beenthere-panel")
+        search = panel.get_by_role("combobox", name="Search countries or regions", exact=True)
+        search.fill("a")
+        results = panel.locator("#country-suggestions").get_by_role("option")
+        result_texts = set()
+        for i in range(results.count()):
+            text = results.nth(i).inner_text().strip()
+            self.assertNotIn(text, result_texts, f"Duplicate result found: {text}")
+            result_texts.add(text)
+        self.assertEqual(self.errors, [])
+
+    def test_region_selection_shows_region_in_search_result_banner(self):
+        self.open_panels()
+        panel = self.page.locator("beenthere-panel")
+        search = panel.get_by_role("combobox", name="Search countries or regions", exact=True)
+        search.fill("california")
+        panel.locator("#country-suggestions").get_by_role("option").click()
+        self.page.wait_for_function("renderer(0).selectedLocation==='US-CA'")
+        banner = panel.locator(".search-result")
+        self.assertEqual(banner.locator(".search-result-name").inner_text(), "California")
+        self.assertEqual(banner.locator(".search-result-country").inner_text(), "United States")
+        self.assertEqual(self.errors, [])
+
+    def test_region_search_query_does_not_match_parent_country_only(self):
+        self.open_panels()
+        panel = self.page.locator("beenthere-panel")
+        search = panel.get_by_role("combobox", name="Search countries or regions", exact=True)
+        search.fill("united states")
+        results = panel.locator("#country-suggestions").get_by_role("option")
+        result_texts = [results.nth(i).inner_text() for i in range(results.count())]
+        self.assertTrue(any("United States" in text and text.count("United States") == 1 for text in result_texts),
+                       "United States country should be in results")
         self.assertEqual(self.errors, [])

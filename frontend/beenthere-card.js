@@ -484,16 +484,44 @@ class VisitedCountriesCard extends HTMLElement {
     this.searchQuery=input.value;
     const countries=new Map();
     const outsideCountries=new Map();
+    const results=[];
     for(const feature of this.geo?.features||[]) {
       const code=this.iso(feature);
-      if(code&&this.name(feature).toLocaleLowerCase().includes(query)) {
-        if(this.featureInContinent(feature))countries.set(code,feature);
-        else outsideCountries.set(code,feature);
+      const name=this.name(feature);
+      const nameLower=name.toLocaleLowerCase();
+      if(code&&nameLower.includes(query)) {
+        const relevance=this.getRelevance(name,query);
+        if(this.featureInContinent(feature))countries.set(code,{feature,relevance});
+        else outsideCountries.set(code,{feature,relevance});
+      }
+    }
+    const enabledRegionalCodes=(this.catalogue?.subdivision_countries||[])
+      .filter(code=>this.subdivisionTrackingEnabled(code)&&this.regionsFor(code).length);
+    for(const code of enabledRegionalCodes) {
+      const regions=this.regionsFor(code);
+      const feature=this.geo?.features.find(f=>this.iso(f)===code);
+      if(!feature)continue;
+      for(const region of regions) {
+        const regionName=region.name;
+        const regionNameLower=regionName.toLocaleLowerCase();
+        if(regionNameLower.includes(query)) {
+          const relevance=this.getRelevance(regionName,query);
+          const entry={feature,region,relevance};
+          if(this.featureInContinent(feature))countries.set(region.code,entry);
+          else outsideCountries.set(region.code,entry);
+        }
       }
     }
     const hasContinentMatches=countries.size>0;
     const matches=hasContinentMatches||this.continent==='World'?countries:outsideCountries;
-    this.searchMatches=[...matches.values()].sort((first,second)=>this.name(first).localeCompare(this.name(second)));
+    const matchEntries=[...matches.values()];
+    matchEntries.sort((a,b)=>{
+      if(a.relevance!==b.relevance)return a.relevance-b.relevance;
+      const aName=a.region?a.region.name:this.name(a.feature);
+      const bName=b.region?b.region.name:this.name(b.feature);
+      return aName.localeCompare(bName);
+    });
+    this.searchMatches=matchEntries;
     const open=!!query&&!!this.searchOpen;
     const outsideMatches=!hasContinentMatches&&this.continent!=='World'&&outsideCountries.size>0;
     const suggestions=this.querySelector('#country-suggestions-panel');
@@ -501,11 +529,22 @@ class VisitedCountriesCard extends HTMLElement {
     list.hidden=!open;
     list.classList.toggle('outside-continent',outsideMatches);
     input.setAttribute('aria-expanded',String(open));
-    list.innerHTML=this.searchMatches.map((feature,index)=>`<li id="country-option-${index}" role="option" aria-selected="${index===this.searchIndex}" data-search-index="${index}"><img src="https://flagcdn.com/w40/${this.flagCode(this.iso(feature))}.png" alt="" width="24" height="18"/><span class="country-suggestion-info"><span>${this.esc(this.name(feature))}</span>${!hasContinentMatches&&this.continent!=='World'?`<small>${this.esc(feature.properties?.CONTINENT||'')}</small>`:''}</span></li>`).join('');
+    list.innerHTML=this.searchMatches.map((entry,index)=>{
+      const code=entry.region?entry.region.code:this.iso(entry.feature);
+      const name=entry.region?entry.region.name:this.name(entry.feature);
+      const countryCode=entry.region?this.iso(entry.feature):null;
+      const countryName=entry.region?this.name(entry.feature):null;
+      const isRegion=!!entry.region;
+      const isTerritory=!isRegion&&!this.geo?.features.find(f=>this.iso(f)===code&&f.properties?.ISO_A2_EH===code)?.properties?.ADMIN;
+      const typeLabel=isRegion?'Region':isTerritory?'Territory':'Country';
+      const locationLabel=isRegion?this.esc(countryName):this.esc(entry.feature.properties?.CONTINENT||'');
+      const flagCode=countryCode||code;
+      return `<li id="country-option-${index}" role="option" aria-selected="${index===this.searchIndex}" data-search-index="${index}" class="place-suggestion"><img src="https://flagcdn.com/w40/${this.flagCode(flagCode)}.png" alt="" width="24" height="18" class="place-flag"/><div class="place-info"><div class="place-name">${this.esc(name)}</div><div class="place-meta">${typeLabel} · ${locationLabel}</div></div></li>`;
+    }).join('');
     const status=this.querySelector('#country-search-status');
     status.textContent=open&&outsideMatches
       ?`No matches in ${this.continent}`
-      :open&&!this.searchMatches.length?'No matching countries':'';
+      :open&&!this.searchMatches.length?'No matching places':'';
     const footnote=this.querySelector('#country-search-footnote');
     footnote.hidden=!(open&&outsideMatches);
     footnote.textContent=footnote.hidden?'':`Selecting countries outside ${this.continent} switches the map to all continents.`;
@@ -516,8 +555,17 @@ class VisitedCountriesCard extends HTMLElement {
     list.onpointerdown=event=>event.preventDefault();
     list.onclick=event=>{
       const option=event.target.closest('[data-search-index]');
-      if(option)this.selectLocation(this.iso(this.searchMatches[Number(option.dataset.searchIndex)]));
+      if(option) {
+        const entry=this.searchMatches[Number(option.dataset.searchIndex)];
+        this.selectLocation(entry.region?entry.region.code:this.iso(entry.feature));
+      }
     };
+  }
+  getRelevance(name,query) {
+    const nameLower=name.toLocaleLowerCase();
+    if(nameLower===query)return 0;
+    if(nameLower.startsWith(query))return 1;
+    return 2;
   }
   prepareMap(units) {
     const features=units.features.map(feature=>{
@@ -918,7 +966,7 @@ class VisitedCountriesCard extends HTMLElement {
       .filter-field{display:flex;flex-direction:column;gap:4px;padding-top:4px}.filter-field+.filter-field{margin-top:6px}.filter-label{color:#b6e8f1;font-size:12px;line-height:1.2}
       .group-visit-filter.hidden{display:none}.group-visit-segment-group{display:grid;grid-template-columns:1fr 1fr;gap:2px;border:1px solid #37536a;border-radius:8px;overflow:hidden;background:#0d1f2a}.group-visit-segment{display:flex;align-items:center;justify-content:center;box-sizing:border-box;height:36px;min-height:36px;padding:0 12px;border:0;background:transparent;color:#b8d4e0;font-size:13px;font-weight:500;cursor:pointer;transition:background-color .15s,color .15s;line-height:1.2}.group-visit-segment:hover{background:#203a51;color:#e6f8ff}.group-visit-segment.active{background:#0f3a47;color:#63f3e5;border:0}.group-visit-segment:focus-visible{outline:2px solid #63f3e5;outline-offset:-2px}
       .visited-country-section>.sidebar-heading{margin:0;padding:12px 16px;flex:0 0 auto}.visited-country-divider{flex:none;height:1px;margin:0 16px;border:0;background:#27445c}.visited-country-section>.visited-country-list,.visited-country-section>.visited-country-empty{margin:0}
-      .map-column{min-width:0}.search-row{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,7fr);gap:14px;align-items:start}.country-search{position:relative;min-width:0;margin:0;height:60px}.country-search input{box-sizing:border-box;width:100%;height:60px;padding:12px 12px 12px 40px;font-size:14px;border-radius:8px;background:#112b3f}.country-search input:focus{outline:2px solid #63f3e5;outline-offset:-2px}.country-search>ha-icon{position:absolute;left:12px;top:20px;--mdc-icon-size:20px;pointer-events:none;color:#9bb4c8}.country-suggestions{position:absolute;z-index:10;top:64px;left:0;right:0;max-height:264px;overflow:auto;list-style:none;padding:0;margin:0;border:1px solid #37536a;border-radius:8px;background:#112b3f;box-shadow:0 6px 16px #0006}.country-suggestions[hidden]{display:none}.country-suggestions:empty{border:0}.country-suggestions li{display:flex;align-items:center;gap:10px;min-height:44px;padding:0 12px;cursor:pointer;overflow-wrap:anywhere}.country-suggestions li img{flex:none;object-fit:contain}.country-suggestions li:hover,.country-suggestions [aria-selected="true"]{background:#234a61;outline:2px solid #63f3e5;outline-offset:-2px}.country-search-status{position:absolute;z-index:11;top:64px;left:0;right:0;box-sizing:border-box;margin:0;padding:14px 12px;background:#112b3f;border:1px solid #37536a;border-radius:8px;overflow-wrap:anywhere}.country-search-status:empty{display:none}.search-result{box-sizing:border-box;display:flex;align-items:center;gap:12px;min-width:0;min-height:60px;padding:7px 10px;border:1px solid #31516a;border-left:3px solid #63f3e5;border-radius:8px;background:#112b3f}.search-result img{flex:none;width:32px;height:22px;object-fit:contain}.search-result-info{display:flex;flex:1;align-items:center;flex-wrap:wrap;gap:4px 16px;min-width:0;overflow-wrap:anywhere}.search-result-name{font-size:15px;font-weight:650}.search-result-status,.search-result-regions{color:#c6d9e5;font-size:12px}.search-result-actions{display:flex;align-items:center;gap:16px;flex:0 0 auto}.search-result-actions button{display:inline-flex;align-items:center;justify-content:center;height:44px;padding:0;border:0;background:transparent}.search-result-actions button:focus-visible,#toggle-search-result:focus-visible{outline:2px solid #63f3e5;outline-offset:1px}.country-edit{grid-column:2;display:flex;gap:8px;align-items:center;flex-wrap:wrap}.country-edit[hidden]{display:none}.country-edit button{min-height:44px;font-size:13px}
+      .map-column{min-width:0}.search-row{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,7fr);gap:14px;align-items:start}.country-search{position:relative;min-width:0;margin:0;height:60px}.country-search input{box-sizing:border-box;width:100%;height:60px;padding:12px 12px 12px 40px;font-size:14px;border-radius:8px;background:#112b3f}.country-search input:focus{outline:2px solid #63f3e5;outline-offset:-2px}.country-search>ha-icon{position:absolute;left:12px;top:20px;--mdc-icon-size:20px;pointer-events:none;color:#9bb4c8}.country-suggestions{position:absolute;z-index:10;top:64px;left:0;right:0;max-height:264px;overflow:auto;list-style:none;padding:0;margin:0;border:1px solid #37536a;border-radius:8px;background:#112b3f;box-shadow:0 6px 16px #0006}.country-suggestions[hidden]{display:none}.country-suggestions:empty{border:0}.place-suggestion{display:flex;align-items:center;gap:12px;min-height:48px;padding:8px 12px;cursor:pointer;transition:background-color .15s ease}.place-suggestion:hover{background:#234a61}.place-suggestion[aria-selected="true"]{background:#234a61;outline:2px solid #63f3e5;outline-offset:-2px}.place-flag{flex:none;width:24px;height:18px;object-fit:contain}.place-info{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}.place-name{font-size:14px;font-weight:500;color:#e6f8ff;line-height:1.3}.place-meta{font-size:12px;color:#9bb4c8;line-height:1.2}.country-search-status{position:absolute;z-index:11;top:64px;left:0;right:0;box-sizing:border-box;margin:0;padding:14px 12px;background:#112b3f;border:1px solid #37536a;border-radius:8px;overflow-wrap:anywhere}.country-search-status:empty{display:none}.search-result{box-sizing:border-box;display:flex;align-items:center;gap:12px;min-width:0;min-height:60px;padding:7px 10px;border:1px solid #31516a;border-left:3px solid #63f3e5;border-radius:8px;background:#112b3f}.search-result img{flex:none;width:32px;height:22px;object-fit:contain}.search-result-info{display:flex;flex:1;align-items:center;flex-wrap:wrap;gap:4px 16px;min-width:0;overflow-wrap:anywhere}.search-result-name{font-size:15px;font-weight:650}.search-result-status,.search-result-regions{color:#c6d9e5;font-size:12px}.search-result-actions{display:flex;align-items:center;gap:16px;flex:0 0 auto}.search-result-actions button{display:inline-flex;align-items:center;justify-content:center;height:44px;padding:0;border:0;background:transparent}.search-result-actions button:focus-visible,#toggle-search-result:focus-visible{outline:2px solid #63f3e5;outline-offset:1px}.country-edit{grid-column:2;display:flex;gap:8px;align-items:center;flex-wrap:wrap}.country-edit[hidden]{display:none}.country-edit button{min-height:44px;font-size:13px}
       .visited-country-section{box-sizing:border-box;display:flex;flex:1;flex-direction:column;min-height:0;overflow:hidden;border:1px solid #31516a;border-radius:4px;background:#112b3f;padding:0}
       .visited-country-section .region-title{flex:none}
       .visited-country-list{box-sizing:border-box;flex:1;min-height:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:auto;scrollbar-color:#37536a #112b3f;list-style:none;margin:0;padding:12px 0}
@@ -942,8 +990,8 @@ class VisitedCountriesCard extends HTMLElement {
       .region-summary{box-sizing:border-box;min-width:0;margin-top:16px;padding:12px;border:1px solid #31516a;border-radius:8px;background:#112b3f}.region-title{margin:0;font-size:15px;font-weight:650;line-height:1.4;letter-spacing:0;overflow-wrap:anywhere}.progress{margin:8px 0 0;color:#9bb4c8;font-size:13px;line-height:1.5;overflow-wrap:anywhere}.progress strong{color:#63f3e5;font-weight:650;font-variant-numeric:tabular-nums}.region-summary progress{display:block;width:100%;height:6px;margin-top:12px;border:0;border-radius:3px;overflow:hidden;appearance:none;background:#27445c;accent-color:#63f3e5}.region-summary progress::-webkit-progress-bar{background:#27445c}.region-summary progress::-webkit-progress-value{background:#63f3e5}.region-summary progress::-moz-progress-bar{background:#63f3e5}
       @media(max-width:1050px){.settings-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.regional-card{grid-column:1/-1}}
       @media(max-width:620px){.settings-grid{grid-template-columns:minmax(0,1fr)}.regional-card{grid-column:auto}.settings-view{padding-top:0}.dialog-content{padding:16px}}
-      .vc{overflow:visible}.search-row{position:relative;z-index:2}.map-layout{position:relative;z-index:1}.country-suggestions-panel{position:absolute;z-index:10;top:64px;left:0;right:0;display:flex;flex-direction:column;max-height:264px;overflow:hidden;border:1px solid #37536a;border-radius:8px;background:#112b3f;box-shadow:0 6px 16px #0006}.country-suggestions-panel[hidden]{display:none}.country-suggestions{position:static;flex:0 1 auto;min-height:0;max-height:none;overflow:auto;border:0;border-radius:0;background:transparent;box-shadow:none}.country-suggestions li{box-sizing:border-box;min-height:36px;padding:6px 10px;gap:8px}.country-suggestion-info{display:flex;flex-direction:column;gap:2px;min-width:0}.country-suggestion-info small{color:#9bb4c8;font-size:11px;line-height:1.2}.country-search-status{position:static;flex:none;padding:10px 12px}.country-search-footnote{flex:none;margin:0;padding:8px 10px;border-top:1px solid #27445c;color:#9bb4c8;font-size:11px;line-height:1.4}.country-search-footnote[hidden]{display:none}
-      .country-suggestions-panel{max-height:320px}.country-suggestions{max-height:162px}.country-suggestions.outside-continent{max-height:216px}.country-suggestions.outside-continent li{min-height:48px}
+      .vc{overflow:visible}.search-row{position:relative;z-index:2}.map-layout{position:relative;z-index:1}.country-suggestions-panel{position:absolute;z-index:10;top:64px;left:0;right:0;display:flex;flex-direction:column;max-height:264px;overflow:hidden;border:1px solid #37536a;border-radius:8px;background:#112b3f;box-shadow:0 6px 16px #0006}.country-suggestions-panel[hidden]{display:none}.country-suggestions{position:static;flex:0 1 auto;min-height:0;max-height:none;overflow:auto;border:0;border-radius:0;background:transparent;box-shadow:none}.place-suggestion{box-sizing:border-box;min-height:52px;padding:8px 10px;gap:10px}.place-flag{width:22px;height:16px}.place-info{gap:2px}.place-name{font-size:13px}.place-meta{font-size:11px}.country-search-status{position:static;flex:none;padding:10px 12px}.country-search-footnote{flex:none;margin:0;padding:8px 10px;border-top:1px solid #27445c;color:#9bb4c8;font-size:11px;line-height:1.4}.country-search-footnote[hidden]{display:none}
+      .country-suggestions-panel{max-height:320px}.country-suggestions{max-height:260px}.place-suggestion{min-height:52px}
       .search-row{grid-template-columns:clamp(300px,26%,360px) minmax(0,1fr) max-content;min-height:56px;align-items:stretch}.search-row>.search-result{grid-column:2;grid-row:1}.view-controls{overflow-y:auto;overscroll-behavior:contain}.country-search{height:auto;min-height:56px}.country-search input{height:100%;min-height:56px;background:#102538}.country-search>ha-icon{top:50%;transform:translateY(-50%)}.country-suggestions-panel{top:calc(100% + 4px)}
       .search-result{position:relative;min-height:56px;padding:5px 10px;border:1px solid #3b6474}.search-result img{width:24px;height:18px}.search-result-info{flex:0 1 auto;gap:6px 12px}.search-result-name{font-size:16px;font-weight:650;line-height:1.35;color:#fff}.search-result-status,.search-result-regions{color:#a8c0d0;font-size:12px}.search-result-identity{display:flex;align-items:center;min-width:0}
       .search-result-identity.region-identity{flex-wrap:wrap;gap:4px 6px}.search-result-country{color:#a8c0d0;font-size:12px;line-height:1.3}.search-result-separator{--mdc-icon-size:16px;display:inline-flex;flex:none;width:16px;height:16px;color:#a8c0d0}
@@ -981,7 +1029,7 @@ class VisitedCountriesCard extends HTMLElement {
     ${this.dialogMarkup(data)}
     <div id="map-view" class="map-view${this.settingsOpen?' hidden':''}">
     <div class="search-row"><div class="search-toolbar">
-    <form id="country-search" class="country-search" aria-label="Find country"><ha-icon icon="mdi:magnify" aria-hidden="true"></ha-icon><input id="search" type="search" role="combobox" aria-autocomplete="list" aria-controls="country-suggestions" aria-expanded="false" aria-describedby="country-search-status" autocomplete="off" placeholder="Search countries&#8230;" aria-label="Search countries" value="${this.esc(this.searchQuery||'')}" ${this.geo?'':'disabled'}/><div id="country-suggestions-panel" class="country-suggestions-panel" hidden><p id="country-search-status" class="muted country-search-status" role="status"></p><ul id="country-suggestions" class="country-suggestions" role="listbox" aria-label="Countries" hidden></ul><p id="country-search-footnote" class="country-search-footnote" hidden></p></div></form>
+    <form id="country-search" class="country-search" aria-label="Find place"><ha-icon icon="mdi:magnify" aria-hidden="true"></ha-icon><input id="search" type="search" role="combobox" aria-autocomplete="list" aria-controls="country-suggestions" aria-expanded="false" aria-describedby="country-search-status" autocomplete="off" placeholder="Search places&#8230;" aria-label="Search places" value="${this.esc(this.searchQuery||'')}" ${this.geo?'':'disabled'}/><div id="country-suggestions-panel" class="country-suggestions-panel" hidden><p id="country-search-status" class="muted country-search-status" role="status"></p><ul id="country-suggestions" class="country-suggestions" role="listbox" aria-label="Places" hidden></ul><p id="country-search-footnote" class="country-search-footnote" hidden></p></div></form>
     </div>
     ${resultFeature?`<section class="search-result" aria-label="Selected ${resultRegion?'region':'country'}" aria-live="polite"><img src="https://flagcdn.com/w40/${this.flagCode(resultCode)}.png" alt="" width="24" height="18"/><div class="search-result-info"><span class="search-result-identity${resultRegion?' region-identity':''}">${resultRegion?`<span class="search-result-country">${this.esc(this.name(resultFeature))}</span><ha-icon class="search-result-separator" icon="mdi:chevron-right" aria-hidden="true"></ha-icon>`:''}<span class="search-result-name">${this.esc(resultRegion?resultRegion.name:this.name(resultFeature))}</span></span>${view.type!=='traveller'&&resultVisitors.length?`<span class="search-result-status search-result-visitors" role="group" aria-label="Visited by"><span class="visitor-label" aria-hidden="true">Visited by</span><span class="visitor-bubbles">${visibleResultVisitors.map(visitor=>this.travellerBubble(visitor)).join('')}${remainingResultVisitors.length?`<details class="visitor-disclosure visitor-overflow" name="country-visitors"><summary role="button" aria-expanded="false" aria-label="Show ${remainingResultVisitors.length} more travellers who visited" title="Show remaining visitor names"><span class="visitor-more" aria-hidden="true">+${remainingResultVisitors.length}</span></summary><ul class="visitor-popover" aria-label="Other travellers who visited">${remainingResultVisitors.map(visitor=>`<li>${this.esc(visitor.name)}</li>`).join('')}</ul></details>`:''}</span></span>`:view.type==='traveller'&&resultVisited&&!resultExplicit?'<span class="search-result-status">Visited via regions</span>':!editable&&!resultVisited?`<span class="search-result-status">${this.esc(this.visitStatus(resultLocation,view,visited,derivedCountries))}</span>`:''}${resultRegions.length?`<span class="search-result-regions">${resultRegions.filter(region=>visited.has(region.code)).length} of ${resultRegions.length} regions visited</span>`:''}</div><div class="search-result-actions">${editable&&(!resultVisited||resultExplicit)?`<button id="toggle-search-result" class="${resultExplicit?'secondary':'primary'}" type="button" ${this._pendingChanges?'disabled':''}><ha-icon icon="mdi:${resultExplicit?'minus':'check'}-circle-outline" aria-hidden="true"></ha-icon><span>${resultExplicit?'Mark unvisited':'Mark visited'}</span></button>`:''}<button id="close-country" type="button" title="Deselect ${resultRegion?'region':'country'}" aria-label="Deselect ${resultRegion?'region':'country'}"><ha-icon icon="mdi:close" aria-hidden="true"></ha-icon></button></div></section>`:''}
     <div class="filters-anchor"><button id="filters-toggle" class="filters-toggle" type="button" aria-expanded="${!!this.filtersOpen}" aria-controls="map-filters" data-filters-active="${filtersActive}"><ha-icon icon="mdi:tune" aria-hidden="true"></ha-icon><span>Filters</span></button>${filters}</div>

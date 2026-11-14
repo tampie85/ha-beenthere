@@ -1244,6 +1244,79 @@ class PanelBrowserTests(unittest.TestCase):
                 self.assertEqual(panel.locator('[data-country-shape="RU"]').get_attribute("aria-current"), "true")
         self.assertEqual(self.errors, [])
 
+    def test_world_map_clips_antarctica_without_removing_it(self):
+        self.open_panels()
+        panel = self.page.locator("beenthere-panel")
+        self.page.evaluate("""()=>{
+            const card=renderer(0);
+            card.geo.features.push(
+                {properties:{ISO_A2_EH:'AQ',ADMIN:'Antarctica',CONTINENT:'Antarctica'},
+                 geometry:{type:'Polygon',coordinates:[[[-100,-90],[100,-90],[100,-60],[-100,-60],[-100,-90]]]}},
+                {properties:{ISO_A2_EH:'BV',ADMIN:'Bouvet Island',CONTINENT:'Antarctica'},
+                 geometry:{type:'Polygon',coordinates:[[[3,-55],[4,-55],[4,-54],[3,-55]]]}}
+            );
+            card.selection='t:alice';
+            card.render();
+        }""")
+        self.assertEqual(panel.locator('[data-country-shape="AQ"]').count(), 1)
+        self.assertEqual(panel.locator('[data-country-shape="BV"]').count(), 1)
+        for width in (1440, 320):
+            self.page.set_viewport_size({"width": width, "height": 1000})
+            self.assertEqual(self.page.evaluate("""()=>{
+                const card=renderer(0), svg=card.querySelector('.map>svg');
+                const at=latitude=>{
+                    const [x,y]=card.xy([-80,latitude]);
+                    const point=new DOMPoint(x,y).matrixTransform(svg.getScreenCTM());
+                    return card.getRootNode().elementFromPoint(point.x,point.y)?.dataset.countryShape;
+                };
+                return [at(-70) || null,at(-75) || null];
+            }"""), ["AQ", None])
+        panel.locator("#search").fill("Antarctica")
+        panel.get_by_role("option", name="Antarctica", exact=True).click()
+        self.page.wait_for_function(
+            "renderer(0).selectedLocation==='AQ' && !renderer(0)._renderScheduled"
+        )
+        self.assertEqual(panel.locator(".search-result-name").inner_text(), "Antarctica")
+        panel.locator("#toggle-search-result").click()
+        self.page.wait_for_function(
+            "renderer(0).querySelector('[data-country-item=\"AQ\"]') && !renderer(0)._pendingChanges"
+        )
+        self.assertEqual(panel.locator('[data-country-item="AQ"]').count(), 1)
+        self.select_filter(panel, "#continent", "Antarctica")
+        self.page.wait_for_function("!renderer(0)._renderScheduled")
+        antarctica = panel.locator('[data-country-shape="AQ"]')
+        self.assertEqual(antarctica.count(), 1)
+        self.assertEqual(antarctica.get_attribute("aria-pressed"), "true")
+        self.assertTrue(self.page.evaluate("""()=>{
+            const card=renderer(0);
+            const [,y,,height]=card._mapBaseBounds;
+            return y<=card.xy([0,-60])[1] && y+height>=card.xy([0,-90])[1];
+        }"""))
+        self.select_filter(panel, "#continent", "World")
+        self.page.wait_for_function("!renderer(0)._renderScheduled")
+        self.assertEqual(panel.locator('[data-country-shape="AQ"]').count(), 1)
+        self.assertIn("AQ", self.page.evaluate("snapshot.travellers.alice.countries"))
+        self.assertEqual(self.errors, [])
+
+    def test_world_map_has_geographical_padding_without_distortion(self):
+        self.open_panels()
+        for width in (1440, 800, 390, 320):
+            with self.subTest(width=width):
+                self.page.set_viewport_size({"width": width, "height": 900})
+                metrics = self.page.evaluate("""()=>{
+                    const card=renderer(0), svg=card.querySelector('.map>svg');
+                    const [x,y,width,height]=svg.getAttribute('viewBox').split(' ').map(Number);
+                    const [east,south]=card.xy([180,-72]);
+                    const matrix=svg.getScreenCTM();
+                    return {margins:[-x/width,(x+width-east)/width,-y/height,(y+height-south)/height],
+                        scaleX:matrix.a,scaleY:matrix.d};
+                }""")
+                for margin in metrics["margins"]:
+                    self.assertGreaterEqual(margin, 0.02)
+                    self.assertLessEqual(margin, 0.03)
+                self.assertAlmostEqual(metrics["scaleX"], metrics["scaleY"], places=6)
+        self.assertEqual(self.errors, [])
+
     def test_map_sizes_to_bounds_for_world_and_every_continent(self):
         self.open_panels()
         panel = self.page.locator("beenthere-panel")
@@ -1278,7 +1351,7 @@ class PanelBrowserTests(unittest.TestCase):
                     self.page.wait_for_function("!renderer(0)._renderScheduled")
                     sizing = self.page.evaluate("""()=>{
                         const card=renderer(0);
-                        const svg=card.querySelector('.map svg');
+                        const svg=card.querySelector('.map>svg');
                         const [, , width, height]=card._mapBaseBounds;
                         const bounds=svg.getBBox();
                         const matrix=svg.getScreenCTM();
@@ -1289,7 +1362,8 @@ class PanelBrowserTests(unittest.TestCase):
                             viewBox:svg.getAttribute('viewBox'),
                             expected:card.mapBounds(card.visibleFeatures()),
                             topLeft:new DOMPoint(bounds.x,bounds.y).matrixTransform(matrix).toJSON(),
-                            bottomRight:new DOMPoint(bounds.x+bounds.width,bounds.y+bounds.height)
+                            bottomRight:new DOMPoint(bounds.x+bounds.width,
+                                card.continent==='World'?Math.min(bounds.y+bounds.height,Number(svg.querySelector('svg').getAttribute('height'))):bounds.y+bounds.height)
                                 .matrixTransform(matrix).toJSON(),
                         };
                     }""")
@@ -1302,7 +1376,7 @@ class PanelBrowserTests(unittest.TestCase):
                     self.assertLess(map_box["height"], map_box["width"])
                     self.assertEqual(sizing["zoom"], 1)
                     self.assertEqual(sizing["viewBox"], sizing["expected"])
-                    self.assertEqual(panel.locator(".map svg").get_attribute("preserveAspectRatio"),
+                    self.assertEqual(panel.locator(".map>svg").get_attribute("preserveAspectRatio"),
                                      "xMidYMid meet")
                     inset = sizing["cornerInset"]
                     self.assertGreaterEqual(sizing["topLeft"]["x"], map_box["x"] + inset)
@@ -1316,19 +1390,28 @@ class PanelBrowserTests(unittest.TestCase):
                         self.assertAlmostEqual(map_box["width"], countries["width"], delta=1)
                         self.assertGreaterEqual(countries["y"], map_box["y"] + map_box["height"])
                     if continent == "World" and width > 760:
-                        self.assertAlmostEqual(map_box["width"] / map_box["height"], 2, delta=.01)
+                        self.assertAlmostEqual(map_box["width"] / map_box["height"], 864 / 388.8, delta=.01)
+                    previous_box = None
                     for button in panel.locator(".map-zoom-controls button").all():
                         box = button.bounding_box()
+                        self.assertAlmostEqual(box["width"], 40, delta=.01)
+                        self.assertAlmostEqual(box["height"], 40, delta=.01)
+                        if previous_box is not None:
+                            self.assertAlmostEqual(
+                                box["y"] - previous_box["y"] - previous_box["height"], 4, delta=.01
+                            )
                         self.assertLessEqual(box["y"] + box["height"], map_box["y"] + map_box["height"])
+                        previous_box = box
         self.assertEqual(self.errors, [])
 
     def test_map_zoom_pan_reset_and_continent_change(self):
         self.open_panels()
         panel = self.page.locator("beenthere-panel")
-        svg = panel.locator(".map svg")
+        svg = panel.locator(".map>svg")
         zoom_in = panel.get_by_role("button", name="Zoom in", exact=True)
         zoom_out = panel.get_by_role("button", name="Zoom out", exact=True)
-        reset = panel.get_by_role("button", name="Reset map zoom", exact=True)
+        reset = panel.get_by_role("button", name="Reset map view", exact=True)
+        self.assertEqual(reset.get_attribute("title"), "Reset map view")
         original = svg.get_attribute("viewBox")
         original_map = panel.locator(".map").bounding_box()
         self.assertTrue(zoom_out.is_disabled())
@@ -1371,13 +1454,112 @@ class PanelBrowserTests(unittest.TestCase):
         country = panel.locator('[data-country-shape="FR"]')
         point = country.bounding_box()
         x, y = point["x"] + point["width"] / 2, point["y"] + point["height"] / 2
-        before = panel.locator(".map svg").get_attribute("viewBox")
+        before = panel.locator(".map>svg").get_attribute("viewBox")
         self.page.mouse.move(x, y)
         self.page.mouse.down()
         self.page.mouse.move(x + 25, y + 10, steps=4)
         self.page.mouse.up()
-        self.assertNotEqual(panel.locator(".map svg").get_attribute("viewBox"), before)
+        self.assertNotEqual(panel.locator(".map>svg").get_attribute("viewBox"), before)
         self.assertIsNone(self.page.evaluate("renderer(0).selectedLocation"))
+        self.assertEqual(self.errors, [])
+
+    def test_map_wheel_and_double_click_zoom_at_pointer(self):
+        self.open_panels()
+        panel = self.page.locator("beenthere-panel")
+        svg = panel.locator(".map>svg")
+        box = svg.bounding_box()
+        pointer = {"x": round(box["x"] + box["width"] * .35),
+                   "y": round(box["y"] + box["height"] * .4)}
+
+        def point_under_pointer():
+            return svg.evaluate("""(svg,point)=>{
+                const position=new DOMPoint(point.x,point.y).matrixTransform(svg.getScreenCTM().inverse());
+                return {x:position.x,y:position.y};
+            }""", pointer)
+
+        original = point_under_pointer()
+        self.page.mouse.move(pointer["x"], pointer["y"])
+        self.page.mouse.wheel(0, -180)
+        self.page.wait_for_function("renderer(0)._mapZoom>1")
+        after = point_under_pointer()
+        self.assertAlmostEqual(after["x"], original["x"], delta=.0001)
+        self.assertAlmostEqual(after["y"], original["y"], delta=.0001)
+        self.page.mouse.wheel(0, 10000)
+        self.page.wait_for_function("renderer(0)._mapZoom===1")
+        self.assertTrue(panel.get_by_role("button", name="Zoom out", exact=True).is_disabled())
+        country = panel.locator('[data-country-shape="FR"]')
+        country_box = country.bounding_box()
+        pointer = {"x": round(country_box["x"] + country_box["width"] / 2),
+                   "y": round(country_box["y"] + country_box["height"] / 2)}
+        original = point_under_pointer()
+        self.page.mouse.dblclick(pointer["x"], pointer["y"])
+        self.page.wait_for_function("renderer(0)._mapZoom===2")
+        self.page.wait_for_timeout(400)
+        after = point_under_pointer()
+        self.assertAlmostEqual(after["x"], original["x"], delta=.0001)
+        self.assertAlmostEqual(after["y"], original["y"], delta=.0001)
+        self.assertIsNone(self.page.evaluate("renderer(0).selectedLocation"))
+        self.assertEqual(self.errors, [])
+
+    def test_map_pinch_zoom_preserves_midpoint_and_does_not_select(self):
+        self.open_panels()
+        svg = self.page.locator("beenthere-panel").locator(".map>svg")
+        box = svg.bounding_box()
+        x, y = box["x"] + box["width"] * .45, box["y"] + box["height"] * .5
+        point = svg.evaluate("""(svg,point)=>{
+            const position=new DOMPoint(point.x,point.y).matrixTransform(svg.getScreenCTM().inverse());
+            return {x:position.x,y:position.y};
+        }""", {"x": x, "y": y})
+        session = self.context.new_cdp_session(self.page)
+        self.addCleanup(session.detach)
+
+        def touch(event_type, distance=None):
+            session.send("Input.dispatchTouchEvent", {
+                "type": event_type,
+                "touchPoints": [] if distance is None else [
+                    {"x": x - distance, "y": y, "id": 1},
+                    {"x": x + distance, "y": y, "id": 2},
+                ],
+            })
+
+        touch("touchStart", 35)
+        touch("touchMove", 70)
+        touch("touchEnd")
+        self.page.wait_for_function("renderer(0)._mapZoom>1.9")
+        after = svg.evaluate("""(svg,point)=>{
+            const position=new DOMPoint(point.x,point.y).matrixTransform(svg.getScreenCTM().inverse());
+            return {x:position.x,y:position.y};
+        }""", {"x": x, "y": y})
+        self.assertAlmostEqual(after["x"], point["x"], delta=.0001)
+        self.assertAlmostEqual(after["y"], point["y"], delta=.0001)
+        touch("touchStart", 70)
+        touch("touchMove", 35)
+        touch("touchCancel")
+        self.page.wait_for_function("renderer(0)._mapZoom===1")
+        self.assertIsNone(self.page.evaluate("renderer(0).selectedLocation"))
+        self.assertEqual(self.errors, [])
+
+    def test_map_controls_work_with_keyboard(self):
+        self.open_panels()
+        panel = self.page.locator("beenthere-panel")
+        zoom_in = panel.get_by_role("button", name="Zoom in", exact=True)
+        zoom_out = panel.get_by_role("button", name="Zoom out", exact=True)
+        reset = panel.get_by_role("button", name="Reset map view", exact=True)
+        zoom_in.focus()
+        zoom_in.press("Enter")
+        self.assertEqual(self.page.evaluate("renderer(0)._mapZoom"), 2)
+        self.page.keyboard.press("Tab")
+        self.assertTrue(zoom_out.evaluate("element=>element===element.getRootNode().activeElement"))
+        zoom_out.press("Space")
+        self.assertTrue(zoom_out.is_disabled())
+        zoom_in.focus()
+        zoom_in.press("Space")
+        self.page.keyboard.press("Tab")
+        self.page.keyboard.press("Tab")
+        self.assertTrue(reset.evaluate("element=>element===element.getRootNode().activeElement"))
+        reset.press("Enter")
+        self.assertEqual(self.page.evaluate("renderer(0)._mapZoom"), 1)
+        self.assertTrue(zoom_out.is_disabled())
         self.assertEqual(self.errors, [])
 
     def test_country_search_footnote_stays_visible_when_results_scroll(self):

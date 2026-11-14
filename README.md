@@ -15,22 +15,31 @@ subtitle and its existing header layout.
 Each traveller has their own map and visit history. Groups combine travellers'
 existing visits on a shared, read-only map, without separate tracking.
 
-The world map shows country and territory outlines. Subdivision detail can be
-enabled independently for the United Kingdom, United States, Australia, Canada,
-and Germany in Settings. Their boundaries and region records are bundled locally.
+The world map shows country and territory outlines, clipped at 72°S to avoid
+the flattened southern edge of Antarctica. Antarctica remains searchable and
+its full geometry can be viewed using the Antarctica continent filter.
+Subdivision detail can be enabled independently for the United Kingdom, United
+States, Australia, Canada, and Germany in Settings. Their boundaries and region
+records are bundled locally.
 Territories with their own country code remain separate from their
 administering country: France and French Guiana, for example, are independent
 selections.
 
 Use the map controls to zoom in, zoom out, or reset the current continent's
-view. When zoomed in, drag the map or focus it and use the arrow keys to pan.
+view. The controls are 40px square with 4px spacing.
+When zoomed in, drag the map or focus it and use the arrow keys to pan.
+Mouse-wheel and double-click zoom keep the location under the pointer in place.
+On touchscreens, pinch with two fingers to zoom and drag to pan within the map;
+scroll the page outside the map. The buttons work with Tab and Enter or Space,
+and the reset button's tooltip reads "Reset map view".
 Changing continents restores the default view.
 
 The map uses a width-driven landscape layout for the world and every continent,
 based on each view's SVG bounds rather than a fixed viewport height. Narrower
 continents use a minimum 3:2 container, and very wide views retain a minimum
-160px height for the map controls. The projection, geographic bounds and default
-zoom are unchanged; outlines are fitted without stretching or additional cropping.
+160px height for the map controls. Outlines are fitted without stretching;
+the world view has approximately 2.5% geographic padding and is clipped at
+72°S, while continent views retain their bounds.
 The visited-country panel matches the map's height. At widths of 760px and below,
 it moves beneath the full-width map and retains an independently scrolling list.
 

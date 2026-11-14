@@ -78,8 +78,13 @@ IDs are retained but never used to infer parent visits.
 
 The main traveller/group selector and continent filter control the map. Russia
 appears in both the Europe and Asia maps and their country searches. The
-sidebar lists unique visited countries alphabetically, including countries
-visited through regions, and shows the count. Selecting a country only highlights
+sidebar lists unique visited destinations (countries and territories)
+alphabetically within the current traveller and continent filters, including
+countries visited through regions.
+Its heading shows **Visited destinations · X of Y**: X is the filtered visited count
+and Y is the total eligible destination count in that continent from the geographic
+catalogue, regardless of visits. Russia counts in both Europe and Asia, but only
+once in the world total. Selecting a country only highlights
 it on the map. Administrators can remove an explicit country-only visit from
 the sidebar after confirmation; this does not remove any regional history.
 The **Filters** button stays at the toolbar's right edge, with the selected-country
@@ -94,10 +99,22 @@ the button when there is more room there. Controls are ordered **Travellers**,
 The comparison buttons explain their meaning in tooltips. Filter
 changes keep it open; click the button again, click outside or press Escape to
 close it. An administrator's individual traveller view is marked as editable.
-The visited-country panel aligns with the map and fills its height. Its
-heading and divider stay inside their rounded card, above the independently
-scrolling list. The heading remains visible while only the country list scrolls;
+The visited-destinations panel aligns with the map and fills its height. Its
+heading and divider stay fixed above the independently scrolling list, with
+scrollbars shown only when needed. The compact, square-cornered rows are 50px
+tall, with 16px horizontal padding and consistently sized, undistorted flags.
+Long names are truncated visually but remain available in tooltips and to screen
+readers. Hover, teal selection indicators and keyboard focus have distinct
+styles. Expandable countries show a right-facing chevron when collapsed.
+The heading remains visible while only the country list scrolls;
 visited-region entries start collapsed and can be expanded independently.
+Expanded regions use compact 42px rows, indented 32px beyond the country name,
+without individual dividers or extra trailing space. A selected region has a
+single 3px teal indicator; its parent row receives only a subtle context tint.
+Selecting a country highlights only its own row. Chevron buttons toggle
+expansion without changing selection, and collapsing a parent preserves the
+selected region. Keyboard focus remains visible and is retained after selection
+or expansion changes.
 Expanded entries select regions; visits are managed in the selected-location banner.
 A country remains visible when its visits come only from regions, including
 while regional detail is disabled. Visit controls

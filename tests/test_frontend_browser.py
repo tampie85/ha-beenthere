@@ -349,13 +349,69 @@ class PanelBrowserTests(unittest.TestCase):
             renderer(0).selection='t:alice';
             renderer(0).render();
         """)
-        self.assertEqual(panel.locator('.country-count').inner_text(), '(0)')
-        self.assertEqual(panel.get_by_text('No countries visited yet.', exact=True).count(), 1)
+        total = sum(len(countries) for countries in
+                    json.loads((COMPONENT_ROOT / "geography.json").read_text())["countries"].values())
+        self.assertEqual(panel.locator('.country-count').inner_text(), f'0 of {total}')
+        self.assertEqual(panel.get_by_text('No destinations visited yet.', exact=True).count(), 1)
         self.assertEqual(panel.locator('.visited-country-item').count(), 0)
         self.page.evaluate("renderer(0).selection='g:empty'; renderer(0).render();")
-        self.assertEqual(panel.locator('.country-count').inner_text(), '(0)')
-        self.assertEqual(panel.get_by_text('No countries visited yet.', exact=True).count(), 1)
+        self.assertEqual(panel.locator('.country-count').inner_text(), f'0 of {total}')
+        self.assertEqual(panel.get_by_text('No destinations visited yet.', exact=True).count(), 1)
         self.assertEqual(panel.locator('[data-remove-country]').count(), 0)
+        self.assertEqual(self.errors, [])
+
+    def test_sidebar_heading_counts_visits_and_eligible_countries_within_filters(self):
+        self.open_panels()
+        panel = self.page.locator("beenthere-panel")
+        self.page.evaluate("""()=>{
+            const card=renderer(0);
+            card.catalogue.countries={
+                Europe:{FR:'France',DE:'Germany',RU:'Russia'},
+                'North America':{US:'United States'},
+                Asia:{JP:'Japan'},Antarctica:{AQ:'Antarctica'},
+            };
+            card.geo.features.push(
+                {properties:{ISO_A2_EH:'RU',CONTINENT:'Europe'}},
+                {properties:{ISO_A2_EH:'RU',CONTINENT:'Europe'}}
+            );
+            card.data={travellers:{
+                alice:{name:'Alice',countries:['FR','US-CA','US','RU','UNKNOWN']},
+                bob:{name:'Bob',countries:['DE','US-FL']},
+                outsider:{name:'Outsider',countries:['JP']},
+            },groups:{family:{name:'Family',members:['alice','bob']}},
+                map_settings:{subdivision_countries:[]}};
+            card.render();
+        }""")
+        for selection, continent, count, codes in (
+            ("t:alice", "World", "3 of 6", ["FR", "RU", "US"]),
+            ("t:alice", "Europe", "2 of 3", ["FR", "RU"]),
+            ("t:alice", "Asia", "1 of 2", ["RU"]),
+            ("t:alice", "Oceania", "0 of 0", []),
+            ("t:alice", "Antarctica", "0 of 1", []),
+            ("t:bob", "Europe", "1 of 3", ["DE"]),
+            ("g:family", "Europe", "3 of 3", ["DE", "FR", "RU"]),
+            ("g:family", "North America", "1 of 1", ["US"]),
+            ("g:family", "World", "4 of 6", ["DE", "FR", "RU", "US"]),
+            ("", "World", "5 of 6", ["DE", "FR", "JP", "RU", "US"]),
+        ):
+            with self.subTest(selection=selection, continent=continent):
+                self.select_filter(panel, "#view", selection)
+                self.select_filter(panel, "#continent", continent)
+                self.page.wait_for_function("!renderer(0)._renderScheduled")
+                self.assertEqual(
+                    panel.locator(".visited-country-section .sidebar-heading").inner_text(),
+                    f"Visited destinations · {count}",
+                )
+                self.assertEqual(
+                    sorted(panel.locator("[data-country-item]").evaluate_all(
+                        "items=>items.map(item=>item.dataset.countryItem)"
+                    )), codes,
+                )
+        self.select_filter(panel, "#view", "g:family")
+        self.select_filter(panel, "#continent", "Europe")
+        self.page.evaluate("renderer(0).groupVisitMode='Everyone'; renderer(0).render();")
+        self.assertEqual(panel.locator(".country-count").inner_text(), "0 of 3")
+        self.assertEqual(panel.locator("[data-country-item]").count(), 0)
         self.assertEqual(self.errors, [])
 
     def test_filters_button_border_reflects_open_or_active_filters(self):
@@ -643,13 +699,13 @@ class PanelBrowserTests(unittest.TestCase):
             "borderStyle:getComputedStyle(element).borderTopStyle})"
         )
         self.assertEqual(style["background"], "rgb(17, 43, 63)")
-        self.assertEqual(style["borderRadius"], "11px")
+        self.assertEqual(style["borderRadius"], "4px")
         self.assertEqual(style["borderStyle"], "solid")
         self.assertEqual(sidebar.locator("#continent, #view, .view-controls").count(), 0)
         map_bounds = panel.locator(".map").bounding_box()
         country_bounds = country_card.bounding_box()
-        self.assertAlmostEqual(country_bounds["y"], map_bounds["y"], delta=1)
-        self.assertAlmostEqual(country_bounds["height"], map_bounds["height"], delta=1)
+        self.assertAlmostEqual(country_bounds["y"], map_bounds["y"], delta=.01)
+        self.assertAlmostEqual(country_bounds["height"], map_bounds["height"], delta=.01)
         heading = country_card.locator(".sidebar-heading")
         typography = heading.evaluate("""element=>{
             const style=getComputedStyle(element);
@@ -676,7 +732,7 @@ class PanelBrowserTests(unittest.TestCase):
         self.assertEqual(divider.bounding_box(), divider_before)
         self.assertEqual(sidebar.evaluate("element=>element.scrollTop"), 0)
         self.assertEqual(self.page.evaluate("scrollY"), before)
-        for width, height in ((1440, 700), (1440, 900), (390, 700)):
+        for width, height in ((1920, 900), (1440, 700), (1280, 900), (1024, 700), (800, 700), (390, 700)):
             self.page.set_viewport_size({"width": width, "height": height})
             dimensions = country_list.evaluate(
                 "element=>({height:element.clientHeight,scrollHeight:element.scrollHeight})"
@@ -688,16 +744,106 @@ class PanelBrowserTests(unittest.TestCase):
             sidebar_bounds = sidebar.bounding_box()
             list_bounds = country_list.bounding_box()
             divider_bounds = divider.bounding_box()
-            self.assertGreater(list_bounds["y"], divider_bounds["y"] + divider_bounds["height"])
+            self.assertAlmostEqual(list_bounds["y"], divider_bounds["y"] + divider_bounds["height"], delta=.01)
             self.assertAlmostEqual(list_bounds["y"] + list_bounds["height"],
-                                   card_bounds["y"] + card_bounds["height"] - 13)
-            self.assertAlmostEqual(card_bounds["height"], map_bounds["height"], delta=1)
-            self.assertAlmostEqual(sidebar_bounds["height"], map_bounds["height"], delta=1)
+                                   card_bounds["y"] + card_bounds["height"] - 1, delta=.01)
+            self.assertAlmostEqual(card_bounds["height"], map_bounds["height"], delta=.01)
+            self.assertAlmostEqual(sidebar_bounds["height"], map_bounds["height"], delta=.01)
             if width > 760:
-                self.assertAlmostEqual(card_bounds["y"], map_bounds["y"], delta=1)
+                self.assertAlmostEqual(card_bounds["y"], map_bounds["y"], delta=.01)
+                self.assertGreaterEqual(card_bounds["x"], map_bounds["x"] + map_bounds["width"])
             else:
                 self.assertGreaterEqual(card_bounds["y"], map_bounds["y"] + map_bounds["height"])
+            self.assertEqual(country_list.evaluate("element=>element.scrollWidth"), country_list.evaluate("element=>element.clientWidth"))
+            heading_before = heading.bounding_box()
+            divider_before = divider.bounding_box()
+            country_list.evaluate("element=>element.scrollTop=0")
+            country_list.evaluate("element=>element.scrollTop=element.scrollHeight")
+            self.assertEqual(heading.bounding_box(), heading_before)
+            self.assertEqual(divider.bounding_box(), divider_before)
+            self.assertEqual(country_card.evaluate("element=>element.scrollTop"), 0)
             self.assertTrue(self.page.evaluate("document.documentElement.scrollWidth<=window.innerWidth"))
+        self.assertEqual(self.errors, [])
+
+    def test_sidebar_rows_have_consistent_spacing_and_distinct_interaction_states(self):
+        self.open_panels()
+        panel = self.page.locator("beenthere-panel")
+        self.page.evaluate("""()=>{
+            snapshot.travellers.alice.countries=['FR','US','US-CA','GB'];
+            snapshot.map_settings.subdivision_countries=['GB','US'];
+            const card=renderer(0);
+            card.data=JSON.parse(JSON.stringify(snapshot));
+            card.selection='t:alice';
+            card.render();
+        }""")
+        before = self.page.evaluate("JSON.stringify(snapshot.travellers)")
+        country_card = panel.locator(".visited-country-section")
+        country_list = panel.locator(".visited-country-list")
+        france = panel.locator('[data-country-item="FR"]')
+        united_states = panel.locator('[data-country-item="US"]')
+        self.assertEqual(country_list.locator(".country-name").all_text_contents(),
+                         ["France", "United Kingdom", "United States"])
+        self.assertEqual(france.locator(".region-link").count(), 0)
+        self.assertEqual(panel.locator('[data-country-item="GB"] .region-link').count(), 0)
+        self.assertEqual(united_states.locator(".region-link ha-icon").get_attribute("icon"), "mdi:chevron-right")
+        for width in (1920, 1440, 1280, 1024, 800):
+            with self.subTest(width=width):
+                self.page.set_viewport_size({"width": width, "height": 900})
+                metrics = country_card.evaluate("""card=>{
+                    const heading=card.querySelector('.sidebar-heading');
+                    const divider=card.querySelector('.visited-country-divider').getBoundingClientRect();
+                    const list=card.querySelector('.visited-country-list');
+                    return {headingLeft:heading.getBoundingClientRect().left+parseFloat(getComputedStyle(heading).paddingLeft),
+                        dividerLeft:divider.left,dividerRight:divider.right,
+                        left:card.getBoundingClientRect().left,right:card.getBoundingClientRect().right,
+                        rows:[...card.querySelectorAll('.visited-country-row')].map(row=>{
+                            const flag=row.querySelector('img'),name=row.querySelector('.country-name');
+                            return {height:row.getBoundingClientRect().height,
+                                flag:flag.getBoundingClientRect().toJSON(),
+                                objectFit:getComputedStyle(flag).objectFit,
+                                nameLeft:name.getBoundingClientRect().left,
+                                title:row.querySelector('.country-link').title,name:name.textContent};
+                        }),scrollHeight:list.scrollHeight,clientHeight:list.clientHeight,
+                        overflow:getComputedStyle(list).overflowY,
+                        bottomSpace:list.getBoundingClientRect().bottom-list.lastElementChild.getBoundingClientRect().bottom};
+                }""")
+                self.assertAlmostEqual(metrics["dividerLeft"] - metrics["left"], 17, delta=.01)
+                self.assertAlmostEqual(metrics["right"] - metrics["dividerRight"], 17, delta=.01)
+                self.assertLessEqual(metrics["scrollHeight"], metrics["clientHeight"])
+                self.assertEqual(metrics["overflow"], "auto")
+                self.assertGreaterEqual(metrics["bottomSpace"], 12)
+                for row in metrics["rows"]:
+                    self.assertEqual(row["height"], 50)
+                    self.assertAlmostEqual(row["flag"]["left"], metrics["headingLeft"], delta=.01)
+                    self.assertAlmostEqual(row["nameLeft"] - row["flag"]["right"], 12, delta=.01)
+                    self.assertEqual((row["flag"]["width"], row["flag"]["height"]), (24, 18))
+                    self.assertEqual(row["objectFit"], "contain")
+                    self.assertEqual(row["title"], row["name"])
+        default = france.evaluate("element=>getComputedStyle(element).backgroundColor")
+        france.locator(".country-link").hover()
+        self.page.wait_for_timeout(200)
+        hovered = france.evaluate("element=>getComputedStyle(element).backgroundColor")
+        self.assertNotEqual(default, hovered)
+        self.assertEqual(france.evaluate("element=>getComputedStyle(element).cursor"), "pointer")
+        france.locator(".country-link").click()
+        self.page.wait_for_function(
+            "renderer(0).selectedLocation==='FR' && !renderer(0)._renderScheduled"
+        )
+        self.page.wait_for_timeout(200)
+        self.assertEqual(france.evaluate("element=>getComputedStyle(element).backgroundColor"), "rgb(27, 64, 82)")
+        self.assertNotEqual(france.evaluate("element=>getComputedStyle(element).backgroundColor"), hovered)
+        self.assertIn("99, 243, 229", france.evaluate("element=>getComputedStyle(element).boxShadow"))
+        link = france.locator(".country-link")
+        link.focus()
+        link.press("Tab")
+        self.page.keyboard.press("Shift+Tab")
+        self.assertEqual(link.evaluate("element=>[element.matches(':focus-visible'),getComputedStyle(element).outlineStyle,getComputedStyle(element).outlineWidth]"),
+                         [True, "solid", "2px"])
+        united_states.locator(".region-link").click()
+        self.page.wait_for_function("renderer(0).querySelector('[data-region-toggle=\"US\"]')?.getAttribute('aria-expanded')==='true'")
+        self.assertEqual(united_states.locator(".region-link ha-icon").get_attribute("icon"), "mdi:chevron-down")
+        self.assertEqual(self.page.evaluate("JSON.stringify(snapshot.travellers)"), before)
+        self.assertEqual(self.page.evaluate("wsMessages.filter(message=>message.type==='beenthere/change').length"), 0)
         self.assertEqual(self.errors, [])
 
     def test_sidebar_selection_focuses_country_and_region_without_mutation(self):
@@ -709,11 +855,14 @@ class PanelBrowserTests(unittest.TestCase):
         panel = self.open_us_map("g:family")
         before = self.page.evaluate("JSON.stringify(snapshot.travellers)")
         self.page.evaluate("renderer(0).continent='Europe'; renderer(0).render();")
+        self.assertEqual(panel.locator('[data-country-item="US"]').count(), 0)
+        self.select_filter(panel, "#continent", "North America")
+        self.page.wait_for_function("!renderer(0)._renderScheduled")
         country = panel.locator('[data-country-item="US"] [data-location-select="US"]')
         country.focus()
         country.press('Enter')
-        self.page.wait_for_function("renderer(0).selectedLocation==='US'")
-        self.assertEqual(self.page.evaluate("renderer(0).continent"), "World")
+        self.page.wait_for_function("renderer(0).selectedLocation==='US' && !renderer(0)._renderScheduled")
+        self.assertEqual(self.page.evaluate("renderer(0).continent"), "North America")
         self.assertEqual(panel.locator('.country[aria-label="United States"]').get_attribute("aria-current"), "true")
         visitors = panel.locator('.search-result-visitors')
         regions = panel.locator('.search-result-regions')
@@ -743,7 +892,7 @@ class PanelBrowserTests(unittest.TestCase):
         self.assertEqual(panel.locator('.search-result-visitors').evaluate(
             "element=>getComputedStyle(element).borderLeftWidth"), "1px")
         self.assertEqual(panel.locator('[data-location="US-CA"]').evaluate("element=>getComputedStyle(element).fill"), "rgb(139, 114, 154)")
-        self.assertIn("rgb(139, 114, 154)", panel.locator('[data-location-select="US-CA"]').locator('..').evaluate("element=>getComputedStyle(element).boxShadow"))
+        self.assertIn("99, 243, 229", panel.locator('[data-location-select="US-CA"]').locator('..').evaluate("element=>getComputedStyle(element).boxShadow"))
         self.assertEqual(self.page.evaluate("JSON.stringify(snapshot.travellers)"), before)
         self.assertEqual(self.page.evaluate("wsMessages.filter(message=>message.type==='beenthere/change').length"), 0)
         self.assertEqual(self.errors, [])
@@ -906,7 +1055,8 @@ class PanelBrowserTests(unittest.TestCase):
             snapshot.groups.family.members=['alice','bob'];
         """)
         panel = self.open_us_map("g:family")
-        self.assertEqual(panel.locator('.country-count').inner_text(), '(2)')
+        total = len(json.loads((COMPONENT_ROOT / "geography.json").read_text())["countries"]["North America"])
+        self.assertEqual(panel.locator('.country-count').inner_text(), f'1 of {total}')
         before = self.page.evaluate("JSON.stringify(snapshot.travellers)")
         for code in ("US-CA", "US-FL"):
             self.assertIn("active", panel.locator(f'[data-location="{code}"]').get_attribute("class"))
@@ -1662,7 +1812,7 @@ class PanelBrowserTests(unittest.TestCase):
                 self.assertLessEqual(box['x'] + box['width'] - close['x'] - close['width'], 12)
                 sidebar_selection = panel.locator('[data-country-item="FR"]')
                 self.assertIn('selected', sidebar_selection.get_attribute('class'))
-                self.assertIn('rgb(139, 114, 154)', sidebar_selection.evaluate('element=>getComputedStyle(element).boxShadow'))
+                self.assertIn('99, 243, 229', sidebar_selection.evaluate('element=>getComputedStyle(element).boxShadow'))
                 country = panel.locator('.country[aria-label="France"]')
                 self.assertEqual(country.evaluate('element=>getComputedStyle(element).fill'), 'rgb(139, 114, 154)')
                 self.assertEqual(country.evaluate('element=>getComputedStyle(element).stroke'), 'rgb(139, 114, 154)')
@@ -2299,7 +2449,7 @@ class PanelBrowserTests(unittest.TestCase):
         self.assertEqual(panel.locator('.regional-checklists, .regional-checklist').count(), 0)
         self.assertEqual(panel.get_by_role("button", name="Regions", exact=True).count(), 0)
         country = panel.locator('.visited-country-item', has_text='United States')
-        self.assertEqual(panel.locator('.visited-country-item').count(), 2)
+        self.assertEqual(panel.locator('.visited-country-item').count(), 1)
         country.get_by_role('button', name='United States', exact=True).click()
         self.assertFalse(country.locator('.visited-subdivision-list').count())
         country.get_by_role('button', name='Expand visited regions in United States').click()
@@ -2307,7 +2457,7 @@ class PanelBrowserTests(unittest.TestCase):
             panel.locator('.visited-country-list > li').evaluate_all(
                 "items=>items.map(item=>item.dataset.countryItem)"
             ),
-            ["FR", "US"],
+            ["US"],
         )
         self.assertEqual(country.locator('.visited-subdivision-list li').count(), 1)
         self.assertIn('California', country.locator('.visited-subdivision-list').inner_text())
